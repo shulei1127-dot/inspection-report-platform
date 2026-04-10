@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Bootstrap MVP
+Upload Skeleton MVP
 
 ## Completed In This Iteration
 
@@ -12,14 +12,18 @@ Bootstrap MVP
 - implemented `GET /health`
 - added baseline docs and environment template
 - added a basic health endpoint test
+- added unified JSON v1 schema models
+- added task and report payload schema models
+- implemented `POST /api/tasks` upload skeleton
+- added zip-only validation, task id generation, upload persistence, and extraction to `workdir/{task_id}/`
+- added a unified JSON to report payload mapper skeleton for future use
+- added upload endpoint tests for success and non-zip failure
 
 ## Pending
 
-- `POST /api/tasks`
-- zip upload storage in `uploads/`
-- auto-extraction to `workdir/{task_id}/`
-- task metadata schema
-- unified JSON output contract for parsing results
+- real log parsing into unified JSON
+- writing `unified.json` during task processing
+- report payload generation in the main flow
 - Carbone integration
 - AI analysis workflow
 - frontend
@@ -27,5 +31,5 @@ Bootstrap MVP
 
 ## Notes
 
-- This iteration intentionally avoids database, frontend, upload handling, and report generation.
-- The next development loop should focus only on the upload task creation path.
+- This iteration intentionally avoids database, real parser integration, and Carbone rendering.
+- The current upload path is synchronous and returns skeleton task metadata only.
