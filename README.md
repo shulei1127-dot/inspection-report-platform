@@ -73,7 +73,7 @@ The current MVP keeps one fixed template:
 The preferred local reproduction path is Docker-based Carbone On-Premise:
 
 ```bash
-docker run -t -i --rm -p 4000:4000 carbone/carbone-ee:latest
+docker run -t -i --rm --platform linux/amd64 -p 4000:4000 carbone/carbone-ee
 ```
 
 Recommended environment variables:
@@ -89,6 +89,9 @@ REPORT_RENDERING_ENABLED=false
 Notes:
 
 - The backend only renders from `report_payload.json`; it does not render directly from unified JSON.
+- For Carbone On-Premise, authentication is disabled by default unless you explicitly enable it.
+- Carbone supports direct DOCX-to-DOCX generation without LibreOffice. LibreOffice is required when you need format conversion such as DOCX-to-PDF.
+- Official Docker variants include `slim` for minimal runtime and `latest/full` for LibreOffice-enabled runtime.
 - The default shell environment used in this repository may not be able to reach Docker Hub. If the Carbone image cannot be pulled or the runtime cannot be reached, the backend returns structured render errors and does not fake `report.docx` generation.
 
 ## Development Rules

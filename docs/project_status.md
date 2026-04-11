@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Real Carbone Adapter MVP
+Carbone Official Alignment MVP
 
 ## Completed In This Iteration
 
@@ -34,6 +34,9 @@ Real Carbone Adapter MVP
 - added a dedicated `POST /api/tasks/{task_id}/render-report` validation entrypoint
 - added structured Carbone runtime error branches for unreachable runtime, failed status checks, and failed render requests
 - added rendering service tests for payload validation, template existence, missing-template handling, disabled-render compatibility, and Carbone-unreachable behavior
+- aligned the Docker startup guidance with Carbone's official Docker repository guidance
+- documented that DOCX-to-DOCX generation does not require LibreOffice, while conversions such as PDF do
+- verified the current template marker style and loop helper markers against official Carbone repetition syntax
 
 ## Pending
 
@@ -50,4 +53,5 @@ Real Carbone Adapter MVP
 - This iteration intentionally avoids database and real parser integration.
 - The current upload path synchronously writes stub-based `unified.json` and `report_payload.json` artifacts.
 - `templates/inspection_report.docx` is the current MVP default placeholder template and is intended only to validate the single-template rendering path.
-- Report rendering now targets the real Carbone HTTP API, but the current shell environment cannot reach Docker Hub to bootstrap a local Carbone container.
+- Report rendering now targets the real Carbone HTTP API, and the adapter shape is aligned with official HTTP API documentation.
+- The current shell environment still cannot reach Docker Hub, so a local Carbone container could not be bootstrapped for a real render success check in this iteration.

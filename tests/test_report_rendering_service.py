@@ -64,8 +64,11 @@ def test_default_template_exists_and_is_valid_docx() -> None:
     assert "{d.host.hostname}" in document_xml
     assert "{d.summary.overall_status_label}" in document_xml
     assert "{d.service_rows[i].name}" in document_xml
+    assert "{d.service_rows[i+1].name}" in document_xml
     assert "{d.container_rows[i].name}" in document_xml
+    assert "{d.container_rows[i+1].name}" in document_xml
     assert "{d.issue_rows[i].id}" in document_xml
+    assert "{d.issue_rows[i+1].id}" in document_xml
 
 
 def test_render_service_detects_existing_template_before_adapter_failure(
