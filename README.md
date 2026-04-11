@@ -76,6 +76,14 @@ The preferred local reproduction path is Docker-based Carbone On-Premise:
 docker run -t -i --rm --platform linux/amd64 -p 4000:4000 carbone/carbone-ee
 ```
 
+On this repository's current macOS Apple Silicon environment, a cached `linux/arm64`
+`carbone/carbone-ee:latest` image also runs successfully with:
+
+```bash
+docker run -d --rm --name inspection-carbone -p 4000:4000 carbone/carbone-ee:latest
+curl http://127.0.0.1:4000/status
+```
+
 Recommended environment variables:
 
 ```bash
@@ -92,7 +100,42 @@ Notes:
 - For Carbone On-Premise, authentication is disabled by default unless you explicitly enable it.
 - Carbone supports direct DOCX-to-DOCX generation without LibreOffice. LibreOffice is required when you need format conversion such as DOCX-to-PDF.
 - Official Docker variants include `slim` for minimal runtime and `latest/full` for LibreOffice-enabled runtime.
-- The default shell environment used in this repository may not be able to reach Docker Hub. If the Carbone image cannot be pulled or the runtime cannot be reached, the backend returns structured render errors and does not fake `report.docx` generation.
+- The current shell still cannot directly open raw TCP 443 connections to `registry-1.docker.io`, but Docker Desktop is configured with its own proxy path and `docker pull carbone/carbone-ee:latest` succeeds on this machine.
+- If the Carbone image cannot be pulled or the runtime cannot be reached, the backend returns structured render errors and does not fake `report.docx` generation.
+
+## Real Render Verification
+
+The repository now includes a minimal verification script for the real render path:
+
+```bash
+./scripts/verify_carbone_render.sh
+```
+
+The script:
+
+- starts a local Carbone container from the cached official image
+- waits for `GET /status`
+- starts the FastAPI app on a temporary port
+- uploads a small zip file through `POST /api/tasks`
+- calls `POST /api/tasks/{task_id}/render-report`
+- verifies that `outputs/{task_id}/report.docx` exists and is a valid DOCX
+
+If you prefer to verify manually:
+
+```bash
+docker run -d --rm --name inspection-carbone -p 4000:4000 carbone/carbone-ee:latest
+curl http://127.0.0.1:4000/status
+
+APP_HOST=127.0.0.1 APP_PORT=8012 CARBONE_BASE_URL=http://127.0.0.1:4000 \
+  .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8012
+```
+
+Then:
+
+1. upload a zip with `POST /api/tasks`
+2. confirm `workdir/{task_id}/report_payload.json` exists
+3. call `POST /api/tasks/{task_id}/render-report`
+4. confirm `outputs/{task_id}/report.docx` exists and opens as a DOCX file
 
 ## Development Rules
 

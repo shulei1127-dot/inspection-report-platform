@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Carbone Official Alignment MVP
+Real Carbone Runtime Verified MVP
 
 ## Completed In This Iteration
 
@@ -37,12 +37,15 @@ Carbone Official Alignment MVP
 - aligned the Docker startup guidance with Carbone's official Docker repository guidance
 - documented that DOCX-to-DOCX generation does not require LibreOffice, while conversions such as PDF do
 - verified the current template marker style and loop helper markers against official Carbone repetition syntax
+- verified that the local Docker daemon is healthy and that a cached official `carbone/carbone-ee:latest` image is available on this machine
+- confirmed the current shell still cannot directly open TCP 443 to Docker Hub endpoints, but Docker Desktop proxying allows `docker pull carbone/carbone-ee:latest` to succeed
+- successfully started a real local Carbone container and confirmed `GET /status` returns `200`
+- successfully completed one real end-to-end render from `report_payload.json` to `outputs/{task_id}/report.docx`
+- added a minimal `scripts/verify_carbone_render.sh` acceptance script for repeatable local render validation
 
 ## Pending
 
 - real log parsing into unified JSON
-- successful Carbone runtime bootstrap in the current environment
-- first end-to-end real `report.docx` generation in this environment
 - product-line and device-specific multi-template system
 - AI analysis workflow
 - frontend
@@ -54,4 +57,5 @@ Carbone Official Alignment MVP
 - The current upload path synchronously writes stub-based `unified.json` and `report_payload.json` artifacts.
 - `templates/inspection_report.docx` is the current MVP default placeholder template and is intended only to validate the single-template rendering path.
 - Report rendering now targets the real Carbone HTTP API, and the adapter shape is aligned with official HTTP API documentation.
-- The current shell environment still cannot reach Docker Hub, so a local Carbone container could not be bootstrapped for a real render success check in this iteration.
+- Real local rendering is now verified on this machine with a cached official Carbone image.
+- Raw shell-level connectivity to Docker Hub is still inconsistent on this machine, but Docker Desktop proxying is sufficient for image pulls and local Carbone runtime startup.
