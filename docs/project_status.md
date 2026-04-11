@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Report Payload Stub MVP
+Report Rendering Skeleton MVP
 
 ## Completed In This Iteration
 
@@ -22,17 +22,25 @@ Report Payload Stub MVP
 - wired unified JSON to report payload mapping into the upload flow
 - added `report_payload.json` persistence to `workdir/{task_id}/report_payload.json`
 - updated the task response to return `report_payload_path`
+- added a replaceable report rendering service layer for future Carbone integration
+- defined default template convention at `templates/inspection_report.docx`
+- defined rendered output convention at `outputs/{task_id}/report.docx`
+- added non-blocking upload-flow integration for optional report rendering
+- updated the task response to support `report_file_path`
 - added upload endpoint tests for success, non-zip failure, missing file, unified JSON generation, and report payload generation
+- added rendering service tests for payload validation, missing template handling, and disabled-render compatibility
 
 ## Pending
 
 - real log parsing into unified JSON
-- Carbone integration
+- real Carbone adapter implementation
+- real DOCX template
 - AI analysis workflow
 - frontend
 - persistence layer
 
 ## Notes
 
-- This iteration intentionally avoids database, real parser integration, and Carbone rendering.
-- The current upload path is synchronous and now writes stub-based `unified.json` and `report_payload.json` artifacts for each successful task.
+- This iteration intentionally avoids database and real parser integration.
+- The current upload path synchronously writes stub-based `unified.json` and `report_payload.json` artifacts.
+- Report rendering is now scaffolded behind a replaceable adapter, but real Carbone execution is not yet available by default.

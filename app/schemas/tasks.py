@@ -25,6 +25,7 @@ class TaskCreateData(BaseModel):
     workdir_path: str
     unified_json_path: str | None = None
     report_payload_path: str | None = None
+    report_file_path: str | None = None
     summary: TaskSummary = Field(default_factory=TaskSummary)
 
 

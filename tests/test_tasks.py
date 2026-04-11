@@ -46,6 +46,7 @@ def test_create_task_uploads_extracts_zip_and_writes_contract_artifacts(
         "container_count": 0,
         "issue_count": 0,
     }
+    assert payload["data"]["report_file_path"] is None
 
     task_id = payload["data"]["task_id"]
     stored_zip_path = tmp_path / "uploads" / f"{task_id}.zip"

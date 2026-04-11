@@ -13,6 +13,7 @@ from app.services.report_payload_mapper import (
     map_unified_json_to_report_payload,
     persist_report_payload,
 )
+from app.services.report_rendering_service import maybe_render_report_from_payload_file
 
 
 class TaskUploadError(Exception):
@@ -70,6 +71,7 @@ def create_task_from_upload(upload: UploadFile | None, options: TaskCreateOption
     task_workdir = settings.workdir_dir / task_id
     unified_json_path = task_workdir / "unified.json"
     report_payload_path = task_workdir / "report_payload.json"
+    report_file_path: str | None = None
 
     settings.uploads_dir.mkdir(parents=True, exist_ok=True)
     task_workdir.mkdir(parents=True, exist_ok=True)
@@ -90,6 +92,12 @@ def create_task_from_upload(upload: UploadFile | None, options: TaskCreateOption
             report_lang=options.report_lang,
         )
         persist_report_payload(report_payload, report_payload_path)
+        render_result = maybe_render_report_from_payload_file(
+            task_id,
+            report_payload_path,
+        )
+        if render_result.success and render_result.output_path is not None:
+            report_file_path = render_result.output_path.as_posix()
     except TaskUploadError:
         _cleanup_failed_task(zip_path, task_workdir)
         raise
@@ -112,6 +120,7 @@ def create_task_from_upload(upload: UploadFile | None, options: TaskCreateOption
         workdir_path=task_workdir.as_posix(),
         unified_json_path=unified_json_path.as_posix(),
         report_payload_path=report_payload_path.as_posix(),
+        report_file_path=report_file_path,
     )
 
 
