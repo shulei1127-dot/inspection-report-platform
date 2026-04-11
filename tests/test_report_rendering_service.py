@@ -1,7 +1,9 @@
 from pathlib import Path
+from zipfile import ZipFile
 
 import pytest
 
+from app.core.config import get_settings
 from app.schemas.report_payload import (
     ReportHost,
     ReportMeta,
@@ -40,6 +42,43 @@ def test_render_service_rejects_missing_template(tmp_path: Path) -> None:
         )
 
     assert exc_info.value.code == "template_missing"
+
+
+def test_default_template_exists_and_is_valid_docx() -> None:
+    template_path = get_settings().default_report_template_path
+
+    assert template_path.exists()
+    assert template_path.suffix.lower() == ".docx"
+
+    with ZipFile(template_path) as archive:
+        assert archive.testzip() is None
+        document_xml = archive.read("word/document.xml").decode("utf-8")
+
+    assert "{d.report.task_id}" in document_xml
+    assert "{d.host.hostname}" in document_xml
+    assert "{d.summary.overall_status_label}" in document_xml
+    assert "{d.service_rows[i].name}" in document_xml
+    assert "{d.container_rows[i].name}" in document_xml
+    assert "{d.issue_rows[i].id}" in document_xml
+
+
+def test_render_service_detects_existing_template_before_adapter_failure(
+    tmp_path: Path,
+) -> None:
+    report_payload_path = _write_report_payload(tmp_path / "report_payload.json")
+    template_path = get_settings().default_report_template_path
+
+    result = maybe_render_report_from_payload_file(
+        "tsk_test_004",
+        report_payload_path,
+        enabled=True,
+        template_path=template_path,
+    )
+
+    assert result.attempted is True
+    assert result.success is False
+    assert result.error_code == "carbone_unavailable"
+    assert result.details["template_path"] == template_path.as_posix()
 
 
 def test_upload_flow_stays_compatible_when_rendering_is_disabled(tmp_path: Path) -> None:

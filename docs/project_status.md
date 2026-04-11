@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Report Rendering Skeleton MVP
+Default Template Asset MVP
 
 ## Completed In This Iteration
 
@@ -27,14 +27,16 @@ Report Rendering Skeleton MVP
 - defined rendered output convention at `outputs/{task_id}/report.docx`
 - added non-blocking upload-flow integration for optional report rendering
 - updated the task response to support `report_file_path`
+- added a real default DOCX template asset at `templates/inspection_report.docx`
+- aligned the default template placeholders with the current report payload contract
 - added upload endpoint tests for success, non-zip failure, missing file, unified JSON generation, and report payload generation
-- added rendering service tests for payload validation, missing template handling, and disabled-render compatibility
+- added rendering service tests for payload validation, template existence, missing-template handling, and disabled-render compatibility
 
 ## Pending
 
 - real log parsing into unified JSON
 - real Carbone adapter implementation
-- real DOCX template
+- product-line and device-specific multi-template system
 - AI analysis workflow
 - frontend
 - persistence layer
@@ -43,4 +45,5 @@ Report Rendering Skeleton MVP
 
 - This iteration intentionally avoids database and real parser integration.
 - The current upload path synchronously writes stub-based `unified.json` and `report_payload.json` artifacts.
-- Report rendering is now scaffolded behind a replaceable adapter, but real Carbone execution is not yet available by default.
+- `templates/inspection_report.docx` is the current MVP default placeholder template and is intended only to validate the single-template rendering path.
+- Report rendering is scaffolded behind a replaceable adapter, but real Carbone execution is not yet available by default.
