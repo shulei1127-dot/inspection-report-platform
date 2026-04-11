@@ -22,6 +22,10 @@ class Settings:
     templates_dir: Path
     default_report_template_path: Path
     report_rendering_enabled: bool
+    carbone_base_url: str
+    carbone_api_token: str | None
+    carbone_api_timeout_seconds: float
+    carbone_version: str
 
 
 def get_settings() -> Settings:
@@ -43,4 +47,8 @@ def get_settings() -> Settings:
             )
         ),
         report_rendering_enabled=_get_bool_env("REPORT_RENDERING_ENABLED", False),
+        carbone_base_url=os.getenv("CARBONE_BASE_URL", "http://127.0.0.1:4000"),
+        carbone_api_token=os.getenv("CARBONE_API_TOKEN") or None,
+        carbone_api_timeout_seconds=float(os.getenv("CARBONE_API_TIMEOUT_SECONDS", "30")),
+        carbone_version=os.getenv("CARBONE_VERSION", "5"),
     )

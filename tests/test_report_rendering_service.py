@@ -2,8 +2,10 @@ from pathlib import Path
 from zipfile import ZipFile
 
 import pytest
+from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
+from app.main import app
 from app.schemas.report_payload import (
     ReportHost,
     ReportMeta,
@@ -11,10 +13,14 @@ from app.schemas.report_payload import (
     ReportSummary,
 )
 from app.services.report_rendering_service import (
+    HttpCarboneAdapter,
     ReportRenderingError,
     maybe_render_report_from_payload_file,
     render_report_from_payload_file,
 )
+
+
+client = TestClient(app)
 
 
 def test_render_service_requires_existing_report_payload(tmp_path: Path) -> None:
@@ -77,8 +83,7 @@ def test_render_service_detects_existing_template_before_adapter_failure(
 
     assert result.attempted is True
     assert result.success is False
-    assert result.error_code == "carbone_unavailable"
-    assert result.details["template_path"] == template_path.as_posix()
+    assert result.error_code in {"carbone_unreachable", "carbone_status_failed"}
 
 
 def test_upload_flow_stays_compatible_when_rendering_is_disabled(tmp_path: Path) -> None:
@@ -94,6 +99,58 @@ def test_upload_flow_stays_compatible_when_rendering_is_disabled(tmp_path: Path)
     assert result.success is False
     assert result.output_path is None
     assert result.error_code is None
+
+
+def test_http_carbone_adapter_fails_cleanly_when_runtime_is_unreachable(
+    tmp_path: Path,
+) -> None:
+    report_payload_path = _write_report_payload(tmp_path / "report_payload.json")
+    template_path = get_settings().default_report_template_path
+    output_path = tmp_path / "report.docx"
+    adapter = HttpCarboneAdapter(
+        base_url="http://127.0.0.1:4999",
+        timeout_seconds=1,
+        carbone_version="5",
+    )
+
+    with pytest.raises(ReportRenderingError) as exc_info:
+        render_report_from_payload_file(
+            "tsk_test_005",
+            report_payload_path,
+            template_path=template_path,
+            output_path=output_path,
+            adapter=adapter,
+        )
+
+    assert exc_info.value.code == "carbone_unreachable"
+
+
+def test_render_report_endpoint_returns_structured_error_when_carbone_is_unreachable(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo_template_path = Path(__file__).resolve().parents[1] / "templates" / "inspection_report.docx"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("CARBONE_BASE_URL", "http://127.0.0.1:4999")
+    monkeypatch.setenv("CARBONE_API_TIMEOUT_SECONDS", "1")
+    monkeypatch.setenv(
+        "DEFAULT_REPORT_TEMPLATE_PATH",
+        repo_template_path.as_posix(),
+    )
+
+    response = client.post(
+        "/api/tasks",
+        files={"file": ("host-a-logs.zip", _build_zip_bytes(), "application/zip")},
+        data={"parser_profile": "default", "report_lang": "zh-CN"},
+    )
+    task_id = response.json()["data"]["task_id"]
+
+    render_response = client.post(f"/api/tasks/{task_id}/render-report")
+
+    assert render_response.status_code == 503
+    payload = render_response.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "carbone_unreachable"
 
 
 def _write_report_payload(target_path: Path) -> Path:
@@ -133,3 +190,14 @@ def _write_report_payload(target_path: Path) -> Path:
         encoding="utf-8",
     )
     return target_path
+
+
+def _build_zip_bytes() -> bytes:
+    from io import BytesIO
+    from zipfile import ZipFile
+
+    buffer = BytesIO()
+    with ZipFile(buffer, "w") as archive:
+        archive.writestr("logs/system.log", "system ok\n")
+        archive.writestr("meta/info.txt", "metadata\n")
+    return buffer.getvalue()

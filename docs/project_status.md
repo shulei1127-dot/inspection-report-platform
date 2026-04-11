@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Default Template Asset MVP
+Real Carbone Adapter MVP
 
 ## Completed In This Iteration
 
@@ -30,12 +30,16 @@ Default Template Asset MVP
 - added a real default DOCX template asset at `templates/inspection_report.docx`
 - aligned the default template placeholders with the current report payload contract
 - added upload endpoint tests for success, non-zip failure, missing file, unified JSON generation, and report payload generation
-- added rendering service tests for payload validation, template existence, missing-template handling, and disabled-render compatibility
+- added a real HTTP-based Carbone adapter implementation for future on-premise runtime integration
+- added a dedicated `POST /api/tasks/{task_id}/render-report` validation entrypoint
+- added structured Carbone runtime error branches for unreachable runtime, failed status checks, and failed render requests
+- added rendering service tests for payload validation, template existence, missing-template handling, disabled-render compatibility, and Carbone-unreachable behavior
 
 ## Pending
 
 - real log parsing into unified JSON
-- real Carbone adapter implementation
+- successful Carbone runtime bootstrap in the current environment
+- first end-to-end real `report.docx` generation in this environment
 - product-line and device-specific multi-template system
 - AI analysis workflow
 - frontend
@@ -46,4 +50,4 @@ Default Template Asset MVP
 - This iteration intentionally avoids database and real parser integration.
 - The current upload path synchronously writes stub-based `unified.json` and `report_payload.json` artifacts.
 - `templates/inspection_report.docx` is the current MVP default placeholder template and is intended only to validate the single-template rendering path.
-- Report rendering is scaffolded behind a replaceable adapter, but real Carbone execution is not yet available by default.
+- Report rendering now targets the real Carbone HTTP API, but the current shell environment cannot reach Docker Hub to bootstrap a local Carbone container.

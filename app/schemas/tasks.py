@@ -34,6 +34,20 @@ class TaskCreateSuccessResponse(BaseModel):
     data: TaskCreateData
 
 
+class RenderReportData(BaseModel):
+    task_id: str
+    template_path: str
+    report_payload_path: str
+    report_file_path: str
+    renderer: str
+    status: Literal["rendered"]
+
+
+class RenderReportSuccessResponse(BaseModel):
+    success: Literal[True] = True
+    data: RenderReportData
+
+
 class TaskError(BaseModel):
     code: str
     message: str

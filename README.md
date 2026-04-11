@@ -60,6 +60,37 @@ Expected response:
 {"status":"ok","service":"inspection-report-platform"}
 ```
 
+## Carbone Runtime
+
+The repository now includes a real HTTP-based Carbone adapter and a dedicated render endpoint:
+
+- `POST /api/tasks/{task_id}/render-report`
+
+The current MVP keeps one fixed template:
+
+- `templates/inspection_report.docx`
+
+The preferred local reproduction path is Docker-based Carbone On-Premise:
+
+```bash
+docker run -t -i --rm -p 4000:4000 carbone/carbone-ee:latest
+```
+
+Recommended environment variables:
+
+```bash
+CARBONE_BASE_URL=http://127.0.0.1:4000
+CARBONE_API_TOKEN=
+CARBONE_API_TIMEOUT_SECONDS=30
+CARBONE_VERSION=5
+REPORT_RENDERING_ENABLED=false
+```
+
+Notes:
+
+- The backend only renders from `report_payload.json`; it does not render directly from unified JSON.
+- The default shell environment used in this repository may not be able to reach Docker Hub. If the Carbone image cannot be pulled or the runtime cannot be reached, the backend returns structured render errors and does not fake `report.docx` generation.
+
 ## Development Rules
 
 - Every new feature, bugfix, or scoped change must start with a plan file under `plans/`.

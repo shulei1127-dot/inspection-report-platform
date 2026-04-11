@@ -1,7 +1,15 @@
 from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import JSONResponse
 
-from app.schemas.tasks import TaskCreateOptions, TaskCreateSuccessResponse, TaskErrorResponse
+from app.core.config import get_settings
+from app.schemas.tasks import (
+    RenderReportData,
+    RenderReportSuccessResponse,
+    TaskCreateOptions,
+    TaskCreateSuccessResponse,
+    TaskErrorResponse,
+)
+from app.services.report_rendering_service import render_task_report
 from app.services.task_service import TaskUploadError, create_task_from_upload
 
 
@@ -38,3 +46,51 @@ async def create_task(
         )
 
     return TaskCreateSuccessResponse(data=data)
+
+
+@router.post(
+    "/api/tasks/{task_id}/render-report",
+    response_model=RenderReportSuccessResponse,
+    status_code=200,
+    summary="Render a DOCX report from an existing report payload",
+    responses={
+        400: {"model": TaskErrorResponse},
+        404: {"model": TaskErrorResponse},
+        503: {"model": TaskErrorResponse},
+    },
+)
+async def render_report(task_id: str) -> RenderReportSuccessResponse | JSONResponse:
+    result = render_task_report(task_id)
+    settings = get_settings()
+
+    if not result.success or result.output_path is None:
+        status_code = 503
+        if result.error_code == "report_payload_missing":
+            status_code = 404
+        elif result.error_code in {"invalid_report_payload", "template_missing"}:
+            status_code = 400
+
+        return JSONResponse(
+            status_code=status_code,
+            content={
+                "success": False,
+                "error": {
+                    "code": result.error_code or "render_failed",
+                    "message": result.error_message or "Report rendering failed.",
+                    "details": result.details,
+                },
+            },
+        )
+
+    return RenderReportSuccessResponse(
+        data=RenderReportData(
+            task_id=task_id,
+            template_path=settings.default_report_template_path.as_posix(),
+            report_payload_path=(
+                settings.workdir_dir / task_id / "report_payload.json"
+            ).as_posix(),
+            report_file_path=result.output_path.as_posix(),
+            renderer=result.renderer or "HttpCarboneAdapter",
+            status="rendered",
+        )
+    )

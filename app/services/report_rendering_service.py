@@ -1,8 +1,10 @@
+import base64
 from dataclasses import dataclass, field
 from json import JSONDecodeError
 from pathlib import Path
 from typing import Protocol
 
+import httpx
 from pydantic import ValidationError
 
 from app.core.config import get_settings
@@ -31,6 +33,7 @@ class ReportRenderResult:
     error_code: str | None = None
     error_message: str | None = None
     details: dict[str, str | int | float | bool | None] = field(default_factory=dict)
+    renderer: str | None = None
 
 
 class ReportRendererAdapter(Protocol):
@@ -43,7 +46,20 @@ class ReportRendererAdapter(Protocol):
     ) -> None: ...
 
 
-class UnavailableCarboneAdapter:
+class HttpCarboneAdapter:
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        timeout_seconds: float,
+        carbone_version: str,
+        api_token: str | None = None,
+    ) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.timeout_seconds = timeout_seconds
+        self.carbone_version = carbone_version
+        self.api_token = api_token
+
     def render(
         self,
         *,
@@ -51,14 +67,76 @@ class UnavailableCarboneAdapter:
         report_payload: ReportPayloadV1,
         output_path: Path,
     ) -> None:
-        raise ReportRenderingError(
-            code="carbone_unavailable",
-            message="Carbone runtime is not configured in the current environment.",
-            details={
-                "template_path": template_path.as_posix(),
-                "output_path": output_path.as_posix(),
-            },
-        )
+        headers = {
+            "content-type": "application/json",
+            "carbone-version": self.carbone_version,
+        }
+        if self.api_token:
+            headers["authorization"] = f"Bearer {self.api_token}"
+
+        timeout = httpx.Timeout(self.timeout_seconds)
+
+        try:
+            with httpx.Client(timeout=timeout) as client:
+                status_response = client.get(
+                    f"{self.base_url}/status",
+                    headers=_status_headers(headers),
+                )
+        except httpx.HTTPError as exc:
+            raise ReportRenderingError(
+                code="carbone_unreachable",
+                message="Failed to reach the Carbone runtime.",
+                details={"carbone_base_url": self.base_url},
+            ) from exc
+
+        if status_response.status_code != 200:
+            raise ReportRenderingError(
+                code="carbone_status_failed",
+                message="Carbone runtime health check failed.",
+                details={
+                    "carbone_base_url": self.base_url,
+                    "status_code": status_response.status_code,
+                },
+            )
+
+        request_body = {
+            "data": report_payload.model_dump(mode="json"),
+            "template": base64.b64encode(template_path.read_bytes()).decode("ascii"),
+        }
+
+        try:
+            with httpx.Client(timeout=timeout) as client:
+                render_response = client.post(
+                    f"{self.base_url}/render/template?download=true",
+                    headers=headers,
+                    json=request_body,
+                )
+        except httpx.HTTPError as exc:
+            raise ReportRenderingError(
+                code="carbone_unreachable",
+                message="Failed to reach the Carbone runtime during render.",
+                details={"carbone_base_url": self.base_url},
+            ) from exc
+
+        if render_response.status_code != 200:
+            raise ReportRenderingError(
+                code="carbone_render_failed",
+                message="Carbone render request failed.",
+                details={
+                    "carbone_base_url": self.base_url,
+                    "status_code": render_response.status_code,
+                    "response_excerpt": render_response.text[:300] or None,
+                },
+            )
+
+        if not render_response.content:
+            raise ReportRenderingError(
+                code="carbone_render_failed",
+                message="Carbone returned an empty rendered document.",
+                details={"carbone_base_url": self.base_url},
+            )
+
+        output_path.write_bytes(render_response.content)
 
 
 def maybe_render_report_from_payload_file(
@@ -76,13 +154,15 @@ def maybe_render_report_from_payload_file(
     if not render_enabled:
         return ReportRenderResult(attempted=False, success=False)
 
+    resolved_adapter = adapter or build_report_renderer_adapter()
+
     try:
         rendered_output_path = render_report_from_payload_file(
             task_id,
             report_payload_path,
             template_path=template_path,
             output_path=output_path,
-            adapter=adapter,
+            adapter=resolved_adapter,
         )
     except ReportRenderingError as exc:
         return ReportRenderResult(
@@ -91,12 +171,14 @@ def maybe_render_report_from_payload_file(
             error_code=exc.code,
             error_message=exc.message,
             details=exc.details,
+            renderer=type(resolved_adapter).__name__,
         )
 
     return ReportRenderResult(
         attempted=True,
         success=True,
         output_path=rendered_output_path,
+        renderer=type(resolved_adapter).__name__,
     )
 
 
@@ -133,7 +215,26 @@ def render_report_from_payload_file(
 
 
 def build_report_renderer_adapter() -> ReportRendererAdapter:
-    return UnavailableCarboneAdapter()
+    settings = get_settings()
+    return HttpCarboneAdapter(
+        base_url=settings.carbone_base_url,
+        timeout_seconds=settings.carbone_api_timeout_seconds,
+        carbone_version=settings.carbone_version,
+        api_token=settings.carbone_api_token,
+    )
+
+
+def render_task_report(task_id: str) -> ReportRenderResult:
+    settings = get_settings()
+    report_payload_path = settings.workdir_dir / task_id / "report_payload.json"
+
+    return maybe_render_report_from_payload_file(
+        task_id,
+        report_payload_path,
+        enabled=True,
+        template_path=settings.default_report_template_path,
+        output_path=settings.outputs_dir / task_id / "report.docx",
+    )
 
 
 def _load_report_payload(report_payload_path: Path) -> ReportPayloadV1:
@@ -154,3 +255,7 @@ def _load_report_payload(report_payload_path: Path) -> ReportPayloadV1:
             message="Report payload file is invalid or cannot be parsed.",
             details={"report_payload_path": report_payload_path.as_posix()},
         ) from exc
+
+
+def _status_headers(headers: dict[str, str]) -> dict[str, str]:
+    return {key: value for key, value in headers.items() if key != "content-type"}
