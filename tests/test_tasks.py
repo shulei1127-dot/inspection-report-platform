@@ -1,16 +1,21 @@
 import io
+import json
 import zipfile
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.schemas.unified_json import UnifiedJsonV1
 
 
 client = TestClient(app)
 
 
-def test_create_task_uploads_and_extracts_zip(tmp_path: Path, monkeypatch) -> None:
+def test_create_task_uploads_extracts_zip_and_writes_unified_json(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
     monkeypatch.chdir(tmp_path)
 
     zip_bytes = _build_zip_bytes(
@@ -40,17 +45,38 @@ def test_create_task_uploads_and_extracts_zip(tmp_path: Path, monkeypatch) -> No
         "container_count": 0,
         "issue_count": 0,
     }
-    assert payload["data"]["unified_json_path"] is None
     assert payload["data"]["report_payload_path"] is None
 
     task_id = payload["data"]["task_id"]
     stored_zip_path = tmp_path / "uploads" / f"{task_id}.zip"
+    unified_json_path = tmp_path / "workdir" / task_id / "unified.json"
     extracted_log_path = tmp_path / "workdir" / task_id / "logs" / "system.log"
     extracted_info_path = tmp_path / "workdir" / task_id / "meta" / "info.txt"
 
     assert stored_zip_path.exists()
+    assert payload["data"]["unified_json_path"] == f"workdir/{task_id}/unified.json"
+    assert unified_json_path.exists()
     assert extracted_log_path.read_text() == "system ok\n"
     assert extracted_info_path.read_text() == "metadata\n"
+
+    unified_json_data = json.loads(unified_json_path.read_text(encoding="utf-8"))
+    unified_json = UnifiedJsonV1.model_validate(unified_json_data)
+
+    assert unified_json.schema_version == "unified-json/v1"
+    assert unified_json.task_id == task_id
+    assert unified_json.host_info.hostname == "host-a-logs"
+    assert unified_json.summary.overall_status == "unknown"
+    assert unified_json.summary.service_count == 0
+    assert unified_json.summary.container_count == 0
+    assert unified_json.summary.issue_count == 0
+    assert unified_json.services == []
+    assert unified_json.containers == []
+    assert unified_json.issues == []
+    assert unified_json.parser is not None
+    assert unified_json.parser.name == "upload-parser-stub"
+    assert unified_json.source is not None
+    assert unified_json.source.archive_name == "host-a-logs.zip"
+    assert unified_json.metadata["extracted_file_count"] == 2
 
 
 def test_create_task_rejects_non_zip_file(tmp_path: Path, monkeypatch) -> None:

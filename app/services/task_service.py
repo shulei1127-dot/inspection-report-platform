@@ -8,6 +8,7 @@ from fastapi import UploadFile
 
 from app.core.config import get_settings
 from app.schemas.tasks import TaskCreateData, TaskCreateOptions, TaskError, TaskErrorResponse
+from app.services.parser_stub import build_unified_json_stub, persist_unified_json
 
 
 class TaskUploadError(Exception):
@@ -63,6 +64,7 @@ def create_task_from_upload(upload: UploadFile | None, options: TaskCreateOption
     task_id = generate_task_id()
     zip_path = settings.uploads_dir / f"{task_id}.zip"
     task_workdir = settings.workdir_dir / task_id
+    unified_json_path = task_workdir / "unified.json"
 
     settings.uploads_dir.mkdir(parents=True, exist_ok=True)
     task_workdir.mkdir(parents=True, exist_ok=True)
@@ -71,6 +73,13 @@ def create_task_from_upload(upload: UploadFile | None, options: TaskCreateOption
         _save_upload(upload, zip_path)
         _validate_zip_file(zip_path, filename)
         _extract_zip_archive(zip_path, task_workdir, filename)
+        unified_json = build_unified_json_stub(
+            task_id,
+            task_workdir,
+            archive_name=filename,
+            archive_size_bytes=zip_path.stat().st_size,
+        )
+        persist_unified_json(unified_json, unified_json_path)
     except TaskUploadError:
         _cleanup_failed_task(zip_path, task_workdir)
         raise
@@ -91,6 +100,7 @@ def create_task_from_upload(upload: UploadFile | None, options: TaskCreateOption
         report_lang=options.report_lang,
         stored_zip_path=zip_path.as_posix(),
         workdir_path=task_workdir.as_posix(),
+        unified_json_path=unified_json_path.as_posix(),
     )
 
 

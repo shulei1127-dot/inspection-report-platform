@@ -3,6 +3,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+UnifiedJsonSchemaVersion = Literal["unified-json/v1"]
 OverallStatus = Literal["healthy", "warning", "critical", "unknown"]
 RuntimeStatus = Literal["running", "stopped", "failed", "unknown"]
 IssueSeverity = Literal["critical", "high", "medium", "low", "info"]
@@ -81,7 +82,7 @@ class UnifiedJsonIssue(BaseModel):
 
 
 class UnifiedJsonV1(BaseModel):
-    schema_version: str
+    schema_version: UnifiedJsonSchemaVersion
     task_id: str
     generated_at: str
     host_info: HostInfo
