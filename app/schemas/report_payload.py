@@ -1,4 +1,9 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
+
+
+ReportPayloadSchemaVersion = Literal["report-payload/v1"]
 
 
 class ReportMeta(BaseModel):
@@ -56,7 +61,7 @@ class IssueRow(BaseModel):
 
 
 class ReportPayloadV1(BaseModel):
-    payload_version: str
+    payload_version: ReportPayloadSchemaVersion
     report: ReportMeta
     host: ReportHost
     summary: ReportSummary

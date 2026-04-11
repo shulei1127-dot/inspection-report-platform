@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from app.schemas.report_payload import (
     ContainerRow,
     IssueRow,
@@ -104,6 +106,16 @@ def map_unified_json_to_report_payload(
             )
             for issue in unified_json.issues
         ],
+        highlights=_build_highlights(unified_json),
+        recommendations=_build_recommendations(unified_json),
+        appendix=_build_appendix(unified_json),
+    )
+
+
+def persist_report_payload(report_payload: ReportPayloadV1, target_path: Path) -> None:
+    target_path.write_text(
+        report_payload.model_dump_json(indent=2),
+        encoding="utf-8",
     )
 
 
@@ -118,3 +130,31 @@ def _join_parts(parts: list[str | None]) -> str | None:
     if not values:
         return None
     return " ".join(values)
+
+
+def _build_highlights(unified_json: UnifiedJsonV1) -> list[str]:
+    return [
+        f"Upload task {unified_json.task_id} completed and unified JSON was generated.",
+    ]
+
+
+def _build_recommendations(unified_json: UnifiedJsonV1) -> list[str]:
+    parser_name = unified_json.parser.name if unified_json.parser else "unknown-parser"
+    return [
+        f"Review results produced by {parser_name} and replace stub parsing with real inspection logic.",
+    ]
+
+
+def _build_appendix(unified_json: UnifiedJsonV1) -> dict[str, str | int | float | bool | None]:
+    parser_name = unified_json.parser.name if unified_json.parser else None
+    parser_version = unified_json.parser.version if unified_json.parser else None
+
+    appendix: dict[str, str | int | float | bool | None] = {
+        "parser_name": parser_name,
+        "parser_version": parser_version,
+    }
+
+    if "extracted_file_count" in unified_json.metadata:
+        appendix["extracted_file_count"] = unified_json.metadata["extracted_file_count"]
+
+    return appendix

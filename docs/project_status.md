@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Unified JSON Stub MVP
+Report Payload Stub MVP
 
 ## Completed In This Iteration
 
@@ -19,13 +19,14 @@ Unified JSON Stub MVP
 - added a parser stub that generates a minimal valid `unified.json` after extraction
 - added `unified.json` persistence to `workdir/{task_id}/unified.json`
 - updated the task response to return `unified_json_path`
-- added a unified JSON to report payload mapper skeleton for future use
-- added upload endpoint tests for success, non-zip failure, missing file, and unified JSON generation
+- wired unified JSON to report payload mapping into the upload flow
+- added `report_payload.json` persistence to `workdir/{task_id}/report_payload.json`
+- updated the task response to return `report_payload_path`
+- added upload endpoint tests for success, non-zip failure, missing file, unified JSON generation, and report payload generation
 
 ## Pending
 
 - real log parsing into unified JSON
-- report payload generation in the main flow
 - Carbone integration
 - AI analysis workflow
 - frontend
@@ -34,4 +35,4 @@ Unified JSON Stub MVP
 ## Notes
 
 - This iteration intentionally avoids database, real parser integration, and Carbone rendering.
-- The current upload path is synchronous and now writes a stub-based `unified.json` for each successful task.
+- The current upload path is synchronous and now writes stub-based `unified.json` and `report_payload.json` artifacts for each successful task.
