@@ -43,7 +43,7 @@ def test_create_task_parses_supported_files_into_unified_json_and_report_payload
     assert payload["data"]["summary"] == {
         "service_count": 4,
         "container_count": 2,
-        "issue_count": 0,
+        "issue_count": 3,
     }
     assert unified_json_path.exists()
     assert report_payload_path.exists()
@@ -70,13 +70,22 @@ def test_create_task_parses_supported_files_into_unified_json_and_report_payload
     ]
     assert unified_json.summary.service_count == 4
     assert unified_json.summary.container_count == 2
+    assert unified_json.summary.issue_count == 3
+    assert unified_json.summary.overall_status == "warning"
     assert unified_json.parser is not None
     assert unified_json.parser.name == "default-linux-parser"
+    assert [issue.id for issue in unified_json.issues] == [
+        "service-fail2ban-failed",
+        "service-auditd-inactive",
+        "container-worker-exited",
+    ]
 
     assert report_payload.host.hostname == "host-a"
     assert report_payload.host.os == "Ubuntu 22.04.4 LTS (Jammy Jellyfish)"
+    assert report_payload.summary.overall_status == "warning"
     assert report_payload.summary.service_count == 4
     assert report_payload.summary.container_count == 2
+    assert report_payload.summary.issue_count == 3
     assert [row.name for row in report_payload.service_rows] == [
         "A high performance web server",
         "Docker Application Container Engine",
@@ -84,6 +93,11 @@ def test_create_task_parses_supported_files_into_unified_json_and_report_payload
         "Security Auditing Service",
     ]
     assert [row.name for row in report_payload.container_rows] == ["redis", "worker"]
+    assert [row.id for row in report_payload.issue_rows] == [
+        "service-fail2ban-failed",
+        "service-auditd-inactive",
+        "container-worker-exited",
+    ]
     assert report_payload.appendix["parser_name"] == "default-linux-parser"
 
 

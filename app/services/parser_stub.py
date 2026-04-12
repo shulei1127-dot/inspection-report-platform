@@ -6,6 +6,7 @@ from app.schemas.unified_json import (
     HostInfo,
     IssueBySeverity,
     UnifiedJsonContainer,
+    UnifiedJsonIssue,
     UnifiedJsonParser,
     UnifiedJsonService,
     UnifiedJsonSource,
@@ -39,6 +40,7 @@ def build_unified_json(
     host_info = _parse_host_info(system_info_path, hostname_fallback=hostname_fallback)
     services = _parse_systemctl_status(systemctl_status_path)
     containers = _parse_docker_ps(docker_ps_path)
+    issues = _build_issues(services, containers)
 
     return UnifiedJsonV1(
         schema_version="unified-json/v1",
@@ -51,13 +53,13 @@ def build_unified_json(
         ),
         parser=UnifiedJsonParser(
             name="default-linux-parser",
-            version="0.2.0",
+            version="0.3.0",
         ),
         host_info=host_info,
-        summary=_build_summary(services, containers),
+        summary=_build_summary(services, containers, issues),
         services=services,
         containers=containers,
-        issues=[],
+        issues=issues,
         warnings=_build_warnings(
             system_info_path=system_info_path,
             systemctl_status_path=systemctl_status_path,
@@ -234,7 +236,7 @@ def _parse_systemctl_status(systemctl_status_path: Path | None) -> list[UnifiedJ
                 version=None,
                 listen_ports=[],
                 start_mode="systemd",
-                notes=None,
+                notes=f"systemd state: load={match.group(2).lower()} active={active_state} sub={sub_state}",
             )
         )
 
@@ -298,7 +300,7 @@ def _parse_docker_ps(docker_ps_path: Path | None) -> list[UnifiedJsonContainer]:
                 runtime="docker",
                 ports=_parse_ports(ports_text),
                 restart_policy=None,
-                notes=None,
+                notes=f"docker status: {status_text}",
             )
         )
 
@@ -313,6 +315,8 @@ def _pick_table_splitter(header_line: str):
 
 def _map_container_status(status_text: str) -> str:
     value = status_text.lower()
+    if "unhealthy" in value:
+        return "failed"
     if value.startswith("up"):
         return "running"
     if "restarting" in value or "dead" in value:
@@ -331,23 +335,20 @@ def _parse_ports(ports_text: str) -> list[str]:
 def _build_summary(
     services: list[UnifiedJsonService],
     containers: list[UnifiedJsonContainer],
+    issues: list[UnifiedJsonIssue],
 ) -> UnifiedJsonSummary:
+    severity_counts = _count_issue_severity(issues)
+
     return UnifiedJsonSummary(
-        overall_status="unknown",
+        overall_status=_derive_overall_status(services, containers, issues),
         service_count=len(services),
         service_running_count=sum(service.status == "running" for service in services),
         container_count=len(containers),
         container_running_count=sum(
             container.status == "running" for container in containers
         ),
-        issue_count=0,
-        issue_by_severity=IssueBySeverity(
-            critical=0,
-            high=0,
-            medium=0,
-            low=0,
-            info=0,
-        ),
+        issue_count=len(issues),
+        issue_by_severity=severity_counts,
     )
 
 
@@ -375,6 +376,129 @@ def _build_warnings(
         )
 
     return warnings
+
+
+def _build_issues(
+    services: list[UnifiedJsonService],
+    containers: list[UnifiedJsonContainer],
+) -> list[UnifiedJsonIssue]:
+    issues: list[UnifiedJsonIssue] = []
+
+    for service in services:
+        service_issue = _build_service_issue(service)
+        if service_issue is not None:
+            issues.append(service_issue)
+
+    for container in containers:
+        container_issue = _build_container_issue(container)
+        if container_issue is not None:
+            issues.append(container_issue)
+
+    return issues
+
+
+def _build_service_issue(service: UnifiedJsonService) -> UnifiedJsonIssue | None:
+    note = (service.notes or "").lower()
+
+    if service.status == "failed":
+        return UnifiedJsonIssue(
+            id=_make_issue_id("service", service.name, "failed"),
+            severity="medium",
+            category="service",
+            title=f"Service {service.name} is in failed state",
+            description=service.notes or "Service was reported by systemd as failed.",
+            suggestion=f"Inspect `systemctl status {service.name}` and recover the {service.name} service.",
+            related_object_type="service",
+            related_object_name=service.name,
+        )
+
+    if "active=inactive" in note or "sub=dead" in note:
+        return UnifiedJsonIssue(
+            id=_make_issue_id("service", service.name, "inactive"),
+            severity="low",
+            category="service",
+            title=f"Service {service.name} is inactive",
+            description=service.notes or "Service was reported by systemd as inactive or dead.",
+            suggestion=f"Confirm whether {service.name} should be running and start or enable it if required.",
+            related_object_type="service",
+            related_object_name=service.name,
+        )
+
+    return None
+
+
+def _build_container_issue(container: UnifiedJsonContainer) -> UnifiedJsonIssue | None:
+    note = (container.notes or "").lower()
+
+    if "unhealthy" in note:
+        return UnifiedJsonIssue(
+            id=_make_issue_id("container", container.name, "unhealthy"),
+            severity="medium",
+            category="container",
+            title=f"Container {container.name} is unhealthy",
+            description=container.notes or "Container health status was reported as unhealthy.",
+            suggestion=f"Inspect the health check and runtime logs for container {container.name}.",
+            related_object_type="container",
+            related_object_name=container.name,
+        )
+
+    if "restarting" in note:
+        return UnifiedJsonIssue(
+            id=_make_issue_id("container", container.name, "restarting"),
+            severity="medium",
+            category="container",
+            title=f"Container {container.name} is restarting",
+            description=container.notes or "Container runtime reported repeated restarts.",
+            suggestion=f"Inspect container logs and restart policy for {container.name}.",
+            related_object_type="container",
+            related_object_name=container.name,
+        )
+
+    if "exited" in note:
+        return UnifiedJsonIssue(
+            id=_make_issue_id("container", container.name, "exited"),
+            severity="low",
+            category="container",
+            title=f"Container {container.name} has exited",
+            description=container.notes or "Container runtime reported an exited container.",
+            suggestion=f"Confirm whether container {container.name} should be running and restart it if required.",
+            related_object_type="container",
+            related_object_name=container.name,
+        )
+
+    return None
+
+
+def _count_issue_severity(issues: list[UnifiedJsonIssue]) -> IssueBySeverity:
+    counts = {
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "low": 0,
+        "info": 0,
+    }
+
+    for issue in issues:
+        counts[issue.severity] += 1
+
+    return IssueBySeverity(**counts)
+
+
+def _derive_overall_status(
+    services: list[UnifiedJsonService],
+    containers: list[UnifiedJsonContainer],
+    issues: list[UnifiedJsonIssue],
+) -> str:
+    if issues:
+        return "warning"
+    if services or containers:
+        return "healthy"
+    return "unknown"
+
+
+def _make_issue_id(category: str, object_name: str, state: str) -> str:
+    safe_name = re.sub(r"[^a-z0-9]+", "-", object_name.lower()).strip("-") or "unknown"
+    return f"{category}-{safe_name}-{state}"
 
 
 def _derive_hostname(extracted_dir: Path, archive_name: str | None) -> str:

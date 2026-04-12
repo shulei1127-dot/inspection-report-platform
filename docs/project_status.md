@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Real Parser V1 MVP
+Issue Generation V1 MVP
 
 ## Completed In This Iteration
 
@@ -47,10 +47,15 @@ Real Parser V1 MVP
 - verified that parsed `host_info`, `services`, and `containers` now flow into `unified.json`
 - updated task creation to return summary counts derived from the generated `unified.json`
 - kept missing parser inputs on safe fallback behavior so `unified-json/v1` stays valid even when known files are absent
+- added issue generation v1 based on parsed service and container states
+- implemented minimal explainable rules for failed/inactive services and exited/unhealthy/restarting containers
+- updated unified summary generation so `overall_status`, `issue_count`, and `issue_by_severity` now reflect parsed issues
+- verified that parsed issues flow through to `report_payload.json` without changing the payload contract
 
 ## Pending
 
 - real log parsing into unified JSON
+- richer issue severity and root-cause analysis
 - product-line and device-specific multi-template system
 - AI analysis workflow
 - frontend
@@ -61,6 +66,7 @@ Real Parser V1 MVP
 - This iteration intentionally avoids database and real parser integration.
 - The current upload path synchronously writes parser-generated `unified.json` and `report_payload.json` artifacts.
 - The parser is no longer pure stub: `system_info`, `systemctl_status`, and `docker_ps` now produce partial real parsed data, while the rest of the contract still falls back to defaults.
+- Issue generation is still rule-based MVP logic and currently only covers a small, explicit status set for services and containers.
 - `templates/inspection_report.docx` is the current MVP default placeholder template and is intended only to validate the single-template rendering path.
 - Report rendering now targets the real Carbone HTTP API, and the adapter shape is aligned with official HTTP API documentation.
 - Real local rendering is now verified on this machine with a cached official Carbone image.
