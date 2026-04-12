@@ -11,6 +11,80 @@ from app.schemas.unified_json import UnifiedJsonV1
 
 
 client = TestClient(app)
+FIXTURE_DIR = Path(__file__).parent / "fixtures" / "real_parser_v1"
+
+
+def test_create_task_parses_supported_files_into_unified_json_and_report_payload(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    zip_bytes = _build_zip_bytes(
+        {
+            fixture_path.name: fixture_path.read_text(encoding="utf-8")
+            for fixture_path in sorted(FIXTURE_DIR.iterdir())
+        }
+    )
+
+    response = client.post(
+        "/api/tasks",
+        files={"file": ("real-parser-v1.zip", zip_bytes, "application/zip")},
+        data={"parser_profile": "default", "report_lang": "zh-CN"},
+    )
+
+    assert response.status_code == 201
+
+    payload = response.json()
+    task_id = payload["data"]["task_id"]
+    unified_json_path = tmp_path / "workdir" / task_id / "unified.json"
+    report_payload_path = tmp_path / "workdir" / task_id / "report_payload.json"
+
+    assert payload["data"]["summary"] == {
+        "service_count": 4,
+        "container_count": 2,
+        "issue_count": 0,
+    }
+    assert unified_json_path.exists()
+    assert report_payload_path.exists()
+
+    unified_json = UnifiedJsonV1.model_validate_json(
+        unified_json_path.read_text(encoding="utf-8")
+    )
+    report_payload = ReportPayloadV1.model_validate_json(
+        report_payload_path.read_text(encoding="utf-8")
+    )
+
+    assert unified_json.host_info.hostname == "host-a"
+    assert unified_json.host_info.os_name == "Ubuntu"
+    assert unified_json.host_info.kernel_version == "5.15.0-105-generic"
+    assert [service.name for service in unified_json.services] == [
+        "nginx",
+        "docker",
+        "fail2ban",
+        "auditd",
+    ]
+    assert [container.name for container in unified_json.containers] == [
+        "redis",
+        "worker",
+    ]
+    assert unified_json.summary.service_count == 4
+    assert unified_json.summary.container_count == 2
+    assert unified_json.parser is not None
+    assert unified_json.parser.name == "default-linux-parser"
+
+    assert report_payload.host.hostname == "host-a"
+    assert report_payload.host.os == "Ubuntu 22.04.4 LTS (Jammy Jellyfish)"
+    assert report_payload.summary.service_count == 4
+    assert report_payload.summary.container_count == 2
+    assert [row.name for row in report_payload.service_rows] == [
+        "A high performance web server",
+        "Docker Application Container Engine",
+        "Fail2Ban Service",
+        "Security Auditing Service",
+    ]
+    assert [row.name for row in report_payload.container_rows] == ["redis", "worker"]
+    assert report_payload.appendix["parser_name"] == "default-linux-parser"
 
 
 def test_create_task_uploads_extracts_zip_and_writes_contract_artifacts(
@@ -77,7 +151,7 @@ def test_create_task_uploads_extracts_zip_and_writes_contract_artifacts(
     assert unified_json.containers == []
     assert unified_json.issues == []
     assert unified_json.parser is not None
-    assert unified_json.parser.name == "upload-parser-stub"
+    assert unified_json.parser.name == "default-linux-parser"
     assert unified_json.source is not None
     assert unified_json.source.archive_name == "host-a-logs.zip"
     assert unified_json.metadata["extracted_file_count"] == 2
@@ -98,9 +172,9 @@ def test_create_task_uploads_extracts_zip_and_writes_contract_artifacts(
         f"Upload task {task_id} completed and unified JSON was generated.",
     ]
     assert report_payload.recommendations == [
-        "Review results produced by upload-parser-stub and replace stub parsing with real inspection logic.",
+        "Review results produced by default-linux-parser and continue expanding parser coverage for additional log types.",
     ]
-    assert report_payload.appendix["parser_name"] == "upload-parser-stub"
+    assert report_payload.appendix["parser_name"] == "default-linux-parser"
     assert report_payload.appendix["extracted_file_count"] == 2
 
 

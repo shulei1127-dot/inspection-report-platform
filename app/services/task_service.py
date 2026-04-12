@@ -7,8 +7,14 @@ from pathlib import Path
 from fastapi import UploadFile
 
 from app.core.config import get_settings
-from app.schemas.tasks import TaskCreateData, TaskCreateOptions, TaskError, TaskErrorResponse
-from app.services.parser_stub import build_unified_json_stub, persist_unified_json
+from app.schemas.tasks import (
+    TaskCreateData,
+    TaskCreateOptions,
+    TaskError,
+    TaskErrorResponse,
+    TaskSummary,
+)
+from app.services.parser_stub import build_unified_json, persist_unified_json
 from app.services.report_payload_mapper import (
     map_unified_json_to_report_payload,
     persist_report_payload,
@@ -80,7 +86,7 @@ def create_task_from_upload(upload: UploadFile | None, options: TaskCreateOption
         _save_upload(upload, zip_path)
         _validate_zip_file(zip_path, filename)
         _extract_zip_archive(zip_path, task_workdir, filename)
-        unified_json = build_unified_json_stub(
+        unified_json = build_unified_json(
             task_id,
             task_workdir,
             archive_name=filename,
@@ -121,6 +127,11 @@ def create_task_from_upload(upload: UploadFile | None, options: TaskCreateOption
         unified_json_path=unified_json_path.as_posix(),
         report_payload_path=report_payload_path.as_posix(),
         report_file_path=report_file_path,
+        summary=TaskSummary(
+            service_count=unified_json.summary.service_count,
+            container_count=unified_json.summary.container_count,
+            issue_count=unified_json.summary.issue_count,
+        ),
     )
 
 

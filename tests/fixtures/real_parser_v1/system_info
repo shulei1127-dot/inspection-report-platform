@@ -1,0 +1,6 @@
+hostname=host-a
+NAME="Ubuntu"
+VERSION="22.04.4 LTS (Jammy Jellyfish)"
+VERSION_ID="22.04"
+PRETTY_NAME="Ubuntu 22.04.4 LTS"
+kernel=5.15.0-105-generic

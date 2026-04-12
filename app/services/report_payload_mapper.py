@@ -141,7 +141,7 @@ def _build_highlights(unified_json: UnifiedJsonV1) -> list[str]:
 def _build_recommendations(unified_json: UnifiedJsonV1) -> list[str]:
     parser_name = unified_json.parser.name if unified_json.parser else "unknown-parser"
     return [
-        f"Review results produced by {parser_name} and replace stub parsing with real inspection logic.",
+        f"Review results produced by {parser_name} and continue expanding parser coverage for additional log types.",
     ]
 
 

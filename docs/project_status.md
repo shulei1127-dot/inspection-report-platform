@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Real Carbone Runtime Verified MVP
+Real Parser V1 MVP
 
 ## Completed In This Iteration
 
@@ -42,6 +42,11 @@ Real Carbone Runtime Verified MVP
 - successfully started a real local Carbone container and confirmed `GET /status` returns `200`
 - successfully completed one real end-to-end render from `report_payload.json` to `outputs/{task_id}/report.docx`
 - added a minimal `scripts/verify_carbone_render.sh` acceptance script for repeatable local render validation
+- replaced part of the parser stub behavior with real parser v1 support for `system_info`, `systemctl_status`, and `docker_ps`
+- added fixture inputs for parser v1 coverage under `tests/fixtures/real_parser_v1`
+- verified that parsed `host_info`, `services`, and `containers` now flow into `unified.json`
+- updated task creation to return summary counts derived from the generated `unified.json`
+- kept missing parser inputs on safe fallback behavior so `unified-json/v1` stays valid even when known files are absent
 
 ## Pending
 
@@ -54,7 +59,8 @@ Real Carbone Runtime Verified MVP
 ## Notes
 
 - This iteration intentionally avoids database and real parser integration.
-- The current upload path synchronously writes stub-based `unified.json` and `report_payload.json` artifacts.
+- The current upload path synchronously writes parser-generated `unified.json` and `report_payload.json` artifacts.
+- The parser is no longer pure stub: `system_info`, `systemctl_status`, and `docker_ps` now produce partial real parsed data, while the rest of the contract still falls back to defaults.
 - `templates/inspection_report.docx` is the current MVP default placeholder template and is intended only to validate the single-template rendering path.
 - Report rendering now targets the real Carbone HTTP API, and the adapter shape is aligned with official HTTP API documentation.
 - Real local rendering is now verified on this machine with a cached official Carbone image.
