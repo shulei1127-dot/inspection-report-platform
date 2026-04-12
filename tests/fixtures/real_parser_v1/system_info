@@ -1,4 +1,8 @@
 hostname=host-a
+ip=10.0.0.8
+timezone=Asia/Shanghai
+uptime=1 day 2 hours 3 minutes 4 seconds
+last_boot_at=2026-04-10T08:30:00Z
 NAME="Ubuntu"
 VERSION="22.04.4 LTS (Jammy Jellyfish)"
 VERSION_ID="22.04"

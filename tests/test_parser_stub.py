@@ -25,9 +25,13 @@ def test_build_unified_json_parses_supported_files(tmp_path: Path) -> None:
 
     assert unified_json.schema_version == "unified-json/v1"
     assert unified_json.host_info.hostname == "host-a"
+    assert unified_json.host_info.ip == "10.0.0.8"
     assert unified_json.host_info.os_name == "Ubuntu"
     assert unified_json.host_info.os_version == "22.04.4 LTS (Jammy Jellyfish)"
     assert unified_json.host_info.kernel_version == "5.15.0-105-generic"
+    assert unified_json.host_info.timezone == "Asia/Shanghai"
+    assert unified_json.host_info.uptime_seconds == 93784
+    assert unified_json.host_info.last_boot_at == "2026-04-10T08:30:00Z"
 
     assert [service.name for service in unified_json.services] == [
         "nginx",
@@ -99,10 +103,20 @@ def test_build_unified_json_falls_back_when_supported_inputs_are_missing(
     assert unified_json.host_info.hostname == "fallback-host"
     assert unified_json.host_info.os_name is None
     assert unified_json.host_info.kernel_version is None
+    assert unified_json.host_info.timezone is None
+    assert unified_json.host_info.uptime_seconds is None
     assert unified_json.services == []
     assert unified_json.containers == []
     assert unified_json.summary.service_count == 0
     assert unified_json.summary.container_count == 0
+    assert unified_json.summary.overall_status == "warning"
+    assert unified_json.summary.issue_count == 4
+    assert [issue.id for issue in unified_json.issues] == [
+        "host-hostname-missing",
+        "host-kernel-version-missing",
+        "host-timezone-missing",
+        "host-uptime-missing",
+    ]
     assert unified_json.parser is not None
     assert unified_json.parser.name == "default-linux-parser"
     assert unified_json.metadata["parsed_system_info"] is False
@@ -114,7 +128,7 @@ def test_build_unified_json_generates_unhealthy_container_issue(tmp_path: Path) 
     extracted_dir = tmp_path / "extracted"
     extracted_dir.mkdir()
     (extracted_dir / "system_info").write_text(
-        'hostname=host-b\nPRETTY_NAME="Ubuntu 24.04 LTS"\nkernel=6.8.0\n',
+        'hostname=host-b\nPRETTY_NAME="Ubuntu 24.04 LTS"\nkernel=6.8.0\ntimezone=UTC\nuptime_seconds=7200\n',
         encoding="utf-8",
     )
     (extracted_dir / "systemctl_status").write_text(
@@ -147,7 +161,7 @@ def test_build_unified_json_keeps_issues_empty_when_runtime_is_healthy(
     extracted_dir = tmp_path / "extracted"
     extracted_dir.mkdir()
     (extracted_dir / "system_info").write_text(
-        'hostname=healthy-host\nPRETTY_NAME="Ubuntu 24.04 LTS"\nkernel=6.8.0\n',
+        'hostname=healthy-host\nPRETTY_NAME="Ubuntu 24.04 LTS"\nkernel=6.8.0\ntimezone=UTC\nuptime=2h\nip=10.0.0.20\nlast_boot_at=2026-04-12T00:00:00Z\n',
         encoding="utf-8",
     )
     (extracted_dir / "systemctl_status").write_text(
@@ -176,3 +190,35 @@ def test_build_unified_json_keeps_issues_empty_when_runtime_is_healthy(
     assert unified_json.summary.overall_status == "healthy"
     assert unified_json.summary.issue_count == 0
     assert unified_json.issues == []
+
+
+def test_build_unified_json_generates_host_issues_for_missing_host_fields(
+    tmp_path: Path,
+) -> None:
+    extracted_dir = tmp_path / "extracted"
+    extracted_dir.mkdir()
+    (extracted_dir / "system_info").write_text(
+        'PRETTY_NAME="Ubuntu 24.04 LTS"\nip=10.10.10.10\nuptime=not-a-duration\n',
+        encoding="utf-8",
+    )
+
+    unified_json = build_unified_json(
+        "tsk_test_host_issues",
+        extracted_dir,
+        archive_name="host-issues.zip",
+        archive_size_bytes=444,
+    )
+
+    assert unified_json.host_info.hostname == "host-issues"
+    assert unified_json.host_info.ip == "10.10.10.10"
+    assert unified_json.host_info.kernel_version is None
+    assert unified_json.host_info.timezone is None
+    assert unified_json.host_info.uptime_seconds is None
+    assert unified_json.summary.overall_status == "warning"
+    assert [issue.id for issue in unified_json.issues] == [
+        "host-hostname-missing",
+        "host-kernel-version-missing",
+        "host-timezone-missing",
+        "host-uptime-missing",
+    ]
+    assert all(issue.category == "host" for issue in unified_json.issues)

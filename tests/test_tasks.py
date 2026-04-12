@@ -56,8 +56,12 @@ def test_create_task_parses_supported_files_into_unified_json_and_report_payload
     )
 
     assert unified_json.host_info.hostname == "host-a"
+    assert unified_json.host_info.ip == "10.0.0.8"
     assert unified_json.host_info.os_name == "Ubuntu"
     assert unified_json.host_info.kernel_version == "5.15.0-105-generic"
+    assert unified_json.host_info.timezone == "Asia/Shanghai"
+    assert unified_json.host_info.uptime_seconds == 93784
+    assert unified_json.host_info.last_boot_at == "2026-04-10T08:30:00Z"
     assert [service.name for service in unified_json.services] == [
         "nginx",
         "docker",
@@ -132,7 +136,7 @@ def test_create_task_uploads_extracts_zip_and_writes_contract_artifacts(
     assert payload["data"]["summary"] == {
         "service_count": 0,
         "container_count": 0,
-        "issue_count": 0,
+        "issue_count": 4,
     }
     assert payload["data"]["report_file_path"] is None
 
@@ -157,13 +161,18 @@ def test_create_task_uploads_extracts_zip_and_writes_contract_artifacts(
     assert unified_json.schema_version == "unified-json/v1"
     assert unified_json.task_id == task_id
     assert unified_json.host_info.hostname == "host-a-logs"
-    assert unified_json.summary.overall_status == "unknown"
+    assert unified_json.summary.overall_status == "warning"
     assert unified_json.summary.service_count == 0
     assert unified_json.summary.container_count == 0
-    assert unified_json.summary.issue_count == 0
+    assert unified_json.summary.issue_count == 4
     assert unified_json.services == []
     assert unified_json.containers == []
-    assert unified_json.issues == []
+    assert [issue.id for issue in unified_json.issues] == [
+        "host-hostname-missing",
+        "host-kernel-version-missing",
+        "host-timezone-missing",
+        "host-uptime-missing",
+    ]
     assert unified_json.parser is not None
     assert unified_json.parser.name == "default-linux-parser"
     assert unified_json.source is not None
@@ -177,11 +186,16 @@ def test_create_task_uploads_extracts_zip_and_writes_contract_artifacts(
     assert report_payload.report.task_id == task_id
     assert report_payload.report.report_lang == "zh-CN"
     assert report_payload.host.hostname == "host-a-logs"
-    assert report_payload.summary.overall_status == "unknown"
-    assert report_payload.summary.overall_status_label == "Unknown"
+    assert report_payload.summary.overall_status == "warning"
+    assert report_payload.summary.overall_status_label == "Warning"
     assert report_payload.service_rows == []
     assert report_payload.container_rows == []
-    assert report_payload.issue_rows == []
+    assert [row.id for row in report_payload.issue_rows] == [
+        "host-hostname-missing",
+        "host-kernel-version-missing",
+        "host-timezone-missing",
+        "host-uptime-missing",
+    ]
     assert report_payload.highlights == [
         f"Upload task {task_id} completed and unified JSON was generated.",
     ]

@@ -1,4 +1,5 @@
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -23,6 +24,13 @@ SYSTEMCTL_STATUS_NAMES = {
 DOCKER_PS_NAMES = {"docker_ps", "docker_ps.txt", "docker_ps.log"}
 
 
+@dataclass(frozen=True)
+class HostParseResult:
+    host_info: HostInfo
+    explicit_hostname_found: bool
+    uptime_value_present: bool
+
+
 def build_unified_json(
     task_id: str,
     extracted_dir: Path,
@@ -37,10 +45,14 @@ def build_unified_json(
     docker_ps_path = _find_input_file(extracted_dir, DOCKER_PS_NAMES)
 
     hostname_fallback = _derive_hostname(extracted_dir, archive_name)
-    host_info = _parse_host_info(system_info_path, hostname_fallback=hostname_fallback)
+    host_parse_result = _parse_host_info(
+        system_info_path,
+        hostname_fallback=hostname_fallback,
+    )
+    host_info = host_parse_result.host_info
     services = _parse_systemctl_status(systemctl_status_path)
     containers = _parse_docker_ps(docker_ps_path)
-    issues = _build_issues(services, containers)
+    issues = _build_issues(host_parse_result, services, containers)
 
     return UnifiedJsonV1(
         schema_version="unified-json/v1",
@@ -53,7 +65,7 @@ def build_unified_json(
         ),
         parser=UnifiedJsonParser(
             name="default-linux-parser",
-            version="0.3.0",
+            version="0.4.0",
         ),
         host_info=host_info,
         summary=_build_summary(services, containers, issues),
@@ -130,31 +142,46 @@ def _find_input_file(extracted_dir: Path, names: set[str]) -> Path | None:
     return None
 
 
-def _parse_host_info(system_info_path: Path | None, *, hostname_fallback: str) -> HostInfo:
+def _parse_host_info(
+    system_info_path: Path | None,
+    *,
+    hostname_fallback: str,
+) -> HostParseResult:
     if system_info_path is None:
-        return HostInfo(
-            hostname=hostname_fallback,
-            ip=None,
-            os_name=None,
-            os_version=None,
-            kernel_version=None,
-            timezone=None,
-            uptime_seconds=None,
-            last_boot_at=None,
+        return HostParseResult(
+            host_info=HostInfo(
+                hostname=hostname_fallback,
+                ip=None,
+                os_name=None,
+                os_version=None,
+                kernel_version=None,
+                timezone=None,
+                uptime_seconds=None,
+                last_boot_at=None,
+            ),
+            explicit_hostname_found=False,
+            uptime_value_present=False,
         )
 
     content = system_info_path.read_text(encoding="utf-8", errors="ignore")
     kv = _parse_key_value_text(content)
 
-    hostname = (
-        kv.get("hostname")
-        or kv.get("static hostname")
-        or hostname_fallback
-    )
+    hostname_value = kv.get("hostname") or kv.get("static hostname")
+    hostname = hostname_value or hostname_fallback
     pretty_name = kv.get("pretty_name") or kv.get("pretty name") or kv.get("os")
     os_name = kv.get("os_name") or kv.get("name")
     os_version = kv.get("os_version") or kv.get("version") or kv.get("version_id")
     kernel_version = kv.get("kernel") or kv.get("kernel_version")
+    ip = kv.get("ip") or kv.get("ip_address") or kv.get("primary_ip")
+    timezone = kv.get("timezone") or kv.get("time_zone") or kv.get("tz")
+    uptime_raw = kv.get("uptime_seconds") or kv.get("uptime")
+    uptime_seconds = _parse_uptime_seconds(uptime_raw) if uptime_raw else None
+    last_boot_raw = (
+        kv.get("last_boot_at")
+        or kv.get("last_boot_time")
+        or kv.get("booted_at")
+    )
+    last_boot_at = _parse_timestamp(last_boot_raw) if last_boot_raw else None
 
     if not os_name and pretty_name:
         os_name = pretty_name
@@ -167,15 +194,19 @@ def _parse_host_info(system_info_path: Path | None, *, hostname_fallback: str) -
             if remainder:
                 os_version = remainder
 
-    return HostInfo(
-        hostname=hostname or hostname_fallback,
-        ip=None,
-        os_name=os_name,
-        os_version=os_version,
-        kernel_version=kernel_version,
-        timezone=None,
-        uptime_seconds=None,
-        last_boot_at=None,
+    return HostParseResult(
+        host_info=HostInfo(
+            hostname=hostname or hostname_fallback,
+            ip=ip,
+            os_name=os_name,
+            os_version=os_version,
+            kernel_version=kernel_version,
+            timezone=timezone,
+            uptime_seconds=uptime_seconds,
+            last_boot_at=last_boot_at,
+        ),
+        explicit_hostname_found=bool(hostname_value),
+        uptime_value_present=uptime_raw is not None,
     )
 
 
@@ -197,6 +228,65 @@ def _parse_key_value_text(content: str) -> dict[str, str]:
             values[key] = value
 
     return values
+
+
+def _parse_uptime_seconds(value: str) -> int | None:
+    normalized = value.strip().lower()
+    if not normalized:
+        return None
+
+    if normalized.isdigit():
+        return int(normalized)
+
+    compact_matches = re.findall(r"(\d+)\s*([dhms])", normalized)
+    if compact_matches:
+        return sum(int(amount) * _duration_unit_seconds(unit) for amount, unit in compact_matches)
+
+    word_matches = re.findall(
+        r"(\d+)\s*(day|days|hour|hours|minute|minutes|second|seconds)",
+        normalized,
+    )
+    if word_matches:
+        total = 0
+        for amount, unit in word_matches:
+            total += int(amount) * _duration_unit_seconds(unit)
+        return total
+
+    return None
+
+
+def _duration_unit_seconds(unit: str) -> int:
+    mapping = {
+        "d": 86400,
+        "day": 86400,
+        "days": 86400,
+        "h": 3600,
+        "hour": 3600,
+        "hours": 3600,
+        "m": 60,
+        "minute": 60,
+        "minutes": 60,
+        "s": 1,
+        "second": 1,
+        "seconds": 1,
+    }
+    return mapping[unit]
+
+
+def _parse_timestamp(value: str) -> str | None:
+    normalized = value.strip()
+    if not normalized:
+        return None
+
+    try:
+        parsed = datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+
+    return parsed.astimezone(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _parse_systemctl_status(systemctl_status_path: Path | None) -> list[UnifiedJsonService]:
@@ -379,10 +469,14 @@ def _build_warnings(
 
 
 def _build_issues(
+    host_parse_result: HostParseResult,
     services: list[UnifiedJsonService],
     containers: list[UnifiedJsonContainer],
 ) -> list[UnifiedJsonIssue]:
     issues: list[UnifiedJsonIssue] = []
+
+    host_issues = _build_host_issues(host_parse_result)
+    issues.extend(host_issues)
 
     for service in services:
         service_issue = _build_service_issue(service)
@@ -393,6 +487,74 @@ def _build_issues(
         container_issue = _build_container_issue(container)
         if container_issue is not None:
             issues.append(container_issue)
+
+    return issues
+
+
+def _build_host_issues(host_parse_result: HostParseResult) -> list[UnifiedJsonIssue]:
+    host_info = host_parse_result.host_info
+    issues: list[UnifiedJsonIssue] = []
+
+    if not host_parse_result.explicit_hostname_found:
+        issues.append(
+            UnifiedJsonIssue(
+                id="host-hostname-missing",
+                severity="low",
+                category="host",
+                title="Host hostname is missing",
+                description="No explicit hostname could be parsed from system_info.",
+                suggestion="Collect hostname information in system_info so the host can be identified reliably.",
+                related_object_type="host",
+                related_object_name=host_info.hostname,
+            )
+        )
+
+    if not host_info.kernel_version:
+        issues.append(
+            UnifiedJsonIssue(
+                id="host-kernel-version-missing",
+                severity="low",
+                category="host",
+                title="Host kernel version is missing",
+                description="Kernel version could not be parsed from system_info.",
+                suggestion="Collect kernel version in system_info for baseline host inspection.",
+                related_object_type="host",
+                related_object_name=host_info.hostname,
+            )
+        )
+
+    if not host_info.timezone:
+        issues.append(
+            UnifiedJsonIssue(
+                id="host-timezone-missing",
+                severity="low",
+                category="host",
+                title="Host timezone is missing",
+                description="Timezone could not be parsed from system_info.",
+                suggestion="Collect timezone information in system_info for report consistency.",
+                related_object_type="host",
+                related_object_name=host_info.hostname,
+            )
+        )
+
+    if host_info.uptime_seconds is None:
+        description = (
+            "Uptime was present in system_info but could not be parsed into seconds."
+            if host_parse_result.uptime_value_present
+            else "Uptime could not be found in system_info."
+        )
+        issues.append(
+            UnifiedJsonIssue(
+                id="host-uptime-missing",
+                severity="low",
+                category="host",
+                title="Host uptime is missing",
+                description=description,
+                suggestion="Collect uptime in a supported format such as integer seconds or duration tokens.",
+                related_object_type="host",
+                related_object_name=host_info.hostname,
+            )
+        )
 
     return issues
 
