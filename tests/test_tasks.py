@@ -139,6 +139,67 @@ def test_get_task_report_returns_404_when_report_is_missing(
     }
 
 
+def test_delete_task_removes_task_artifacts_and_followup_queries_fail(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    task_id = "tsk_20260412_050505_delete01"
+    _write_task_files(
+        tmp_path,
+        task_id=task_id,
+        summary={"service_count": 1, "container_count": 1, "issue_count": 1},
+        include_report=True,
+    )
+
+    delete_response = client.delete(f"/api/tasks/{task_id}")
+
+    assert delete_response.status_code == 200
+    payload = delete_response.json()
+    assert payload["success"] is True
+    assert payload["data"]["task_id"] == task_id
+    assert payload["data"]["deleted"] is True
+    assert payload["data"]["deleted_paths"] == [
+        f"uploads/{task_id}.zip",
+        f"workdir/{task_id}",
+        f"outputs/{task_id}",
+    ]
+
+    assert not (tmp_path / "uploads" / f"{task_id}.zip").exists()
+    assert not (tmp_path / "workdir" / task_id).exists()
+    assert not (tmp_path / "outputs" / task_id).exists()
+
+    get_task_response = client.get(f"/api/tasks/{task_id}")
+    assert get_task_response.status_code == 404
+    assert get_task_response.json()["error"]["code"] == "task_not_found"
+
+    download_response = client.get(f"/api/tasks/{task_id}/report")
+    assert download_response.status_code == 404
+    assert download_response.json()["error"]["code"] == "report_not_found"
+
+
+def test_delete_task_returns_404_when_task_is_missing(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    response = client.delete("/api/tasks/tsk_missing_delete")
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "success": False,
+        "error": {
+            "code": "task_not_found",
+            "message": "Task result does not exist.",
+            "details": {
+                "task_id": "tsk_missing_delete",
+            },
+        },
+    }
+
+
 def test_create_task_parses_supported_files_into_unified_json_and_report_payload(
     tmp_path: Path,
     monkeypatch,

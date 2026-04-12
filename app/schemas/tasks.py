@@ -55,6 +55,17 @@ class TaskListSuccessResponse(BaseModel):
     data: list[TaskResultData]
 
 
+class TaskDeleteData(BaseModel):
+    task_id: str
+    deleted: Literal[True] = True
+    deleted_paths: list[str] = Field(default_factory=list)
+
+
+class TaskDeleteSuccessResponse(BaseModel):
+    success: Literal[True] = True
+    data: TaskDeleteData
+
+
 class RenderReportData(BaseModel):
     task_id: str
     template_path: str

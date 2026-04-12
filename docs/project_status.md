@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Minimal Task List API MVP
+Minimal Task Cleanup API MVP
 
 ## Completed In This Iteration
 
@@ -66,6 +66,8 @@ Minimal Task List API MVP
 - added `GET /api/tasks` for minimal task history visibility without requiring users to remember task IDs manually
 - implemented latest-first task ordering based on parsed task timestamp with filesystem fallback
 - kept task list generation file-based and aligned its item structure with the existing single-task result format
+- added `DELETE /api/tasks/{task_id}` to remove the uploaded archive, workdir, and output directory for a task
+- kept cleanup strictly scoped to the exact task-specific paths derived from `task_id`
 
 ## Pending
 
@@ -93,3 +95,4 @@ Minimal Task List API MVP
 - Task-result querying and report download now have HTTP delivery endpoints, but task persistence is still inferred from the filesystem rather than stored as explicit records.
 - Input support is now documented and stabilized for v1, but parser coverage is still intentionally narrow and only covers the currently documented files.
 - Task history is now visible through `GET /api/tasks`, but the list is still intentionally minimal and has no pagination, filtering, or search yet.
+- Task cleanup now exists for local trial use, but there is still no retention policy, soft delete, or restore mechanism.

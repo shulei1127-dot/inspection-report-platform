@@ -7,6 +7,7 @@ from app.schemas.tasks import (
     RenderReportSuccessResponse,
     TaskCreateOptions,
     TaskCreateSuccessResponse,
+    TaskDeleteSuccessResponse,
     TaskErrorResponse,
     TaskListSuccessResponse,
     TaskResultSuccessResponse,
@@ -16,6 +17,7 @@ from app.services.task_service import (
     TaskLookupError,
     TaskUploadError,
     create_task_from_upload,
+    delete_task,
     get_task_report_path,
     get_task_result,
     list_task_results,
@@ -161,3 +163,24 @@ async def download_report(task_id: str) -> FileResponse | JSONResponse:
         ),
         filename=f"{task_id}.docx",
     )
+
+
+@router.delete(
+    "/api/tasks/{task_id}",
+    response_model=TaskDeleteSuccessResponse,
+    status_code=200,
+    summary="Delete the uploaded archive, workdir, and outputs for an inspection task",
+    responses={
+        404: {"model": TaskErrorResponse},
+    },
+)
+async def delete_task_endpoint(task_id: str) -> TaskDeleteSuccessResponse | JSONResponse:
+    try:
+        data = delete_task(task_id)
+    except TaskLookupError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=exc.to_response().model_dump(),
+        )
+
+    return TaskDeleteSuccessResponse(data=data)

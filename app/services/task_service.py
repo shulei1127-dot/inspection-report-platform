@@ -13,6 +13,7 @@ from app.schemas.unified_json import UnifiedJsonV1
 from app.schemas.tasks import (
     TaskCreateData,
     TaskCreateOptions,
+    TaskDeleteData,
     TaskError,
     TaskErrorResponse,
     TaskResultData,
@@ -231,6 +232,34 @@ def get_task_report_path(task_id: str) -> Path:
     return report_file_path
 
 
+def delete_task(task_id: str) -> TaskDeleteData:
+    artifact_paths = _resolve_task_paths(task_id)
+    _ensure_task_exists(task_id, artifact_paths=artifact_paths)
+
+    deleted_paths: list[str] = []
+
+    stored_zip_path = artifact_paths["stored_zip_path"]
+    if stored_zip_path.exists():
+        stored_zip_path.unlink()
+        deleted_paths.append(stored_zip_path.as_posix())
+
+    task_workdir = artifact_paths["task_workdir"]
+    if task_workdir.exists():
+        shutil.rmtree(task_workdir)
+        deleted_paths.append(task_workdir.as_posix())
+
+    outputs_dir = artifact_paths["outputs_task_dir"]
+    if outputs_dir.exists():
+        shutil.rmtree(outputs_dir)
+        deleted_paths.append(outputs_dir.as_posix())
+
+    return TaskDeleteData(
+        task_id=task_id,
+        deleted=True,
+        deleted_paths=deleted_paths,
+    )
+
+
 def _save_upload(upload: UploadFile, target_path: Path) -> None:
     upload.file.seek(0)
     with target_path.open("wb") as buffer:
@@ -310,12 +339,14 @@ def _load_task_summary(unified_json_path: Path) -> TaskSummary:
 def _resolve_task_paths(task_id: str) -> dict[str, Path]:
     settings = get_settings()
     task_workdir = settings.workdir_dir / task_id
+    outputs_task_dir = settings.outputs_dir / task_id
     return {
         "stored_zip_path": settings.uploads_dir / f"{task_id}.zip",
         "task_workdir": task_workdir,
         "unified_json_path": task_workdir / "unified.json",
         "report_payload_path": task_workdir / "report_payload.json",
-        "report_file_path": settings.outputs_dir / task_id / "report.docx",
+        "outputs_task_dir": outputs_task_dir,
+        "report_file_path": outputs_task_dir / "report.docx",
     }
 
 
