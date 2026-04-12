@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Real Input Bundle Spec V1 MVP
+Minimal Task List API MVP
 
 ## Completed In This Iteration
 
@@ -63,6 +63,9 @@ Real Input Bundle Spec V1 MVP
 - added `docs/input_bundle_spec_v1.md` to formalize the supported zip input structure, file names, and minimal file formats
 - updated parser lookup to prefer the canonical v1 input paths
 - aligned fixtures and tests with the input bundle v1 directory layout
+- added `GET /api/tasks` for minimal task history visibility without requiring users to remember task IDs manually
+- implemented latest-first task ordering based on parsed task timestamp with filesystem fallback
+- kept task list generation file-based and aligned its item structure with the existing single-task result format
 
 ## Pending
 
@@ -89,3 +92,4 @@ Real Input Bundle Spec V1 MVP
 - Raw shell-level connectivity to Docker Hub is still inconsistent on this machine, but Docker Desktop proxying is sufficient for image pulls and local Carbone runtime startup.
 - Task-result querying and report download now have HTTP delivery endpoints, but task persistence is still inferred from the filesystem rather than stored as explicit records.
 - Input support is now documented and stabilized for v1, but parser coverage is still intentionally narrow and only covers the currently documented files.
+- Task history is now visible through `GET /api/tasks`, but the list is still intentionally minimal and has no pagination, filtering, or search yet.

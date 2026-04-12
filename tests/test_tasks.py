@@ -37,10 +37,61 @@ def test_get_task_returns_minimal_result_for_existing_task(
     assert payload["success"] is True
     assert payload["data"]["task_id"] == task_id
     assert payload["data"]["status"] == "completed"
+    assert payload["data"]["created_at"] is not None
     assert payload["data"]["unified_json_path"] == f"workdir/{task_id}/unified.json"
     assert payload["data"]["report_payload_path"] == f"workdir/{task_id}/report_payload.json"
     assert payload["data"]["report_file_path"] is None
     assert payload["data"]["summary"]["issue_count"] == 4
+
+
+def test_list_tasks_returns_multiple_items_in_latest_first_order(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    _write_task_files(
+        tmp_path,
+        task_id="tsk_20260412_010101_older001",
+        summary={"service_count": 1, "container_count": 0, "issue_count": 0},
+        include_report=False,
+    )
+    _write_task_files(
+        tmp_path,
+        task_id="tsk_20260412_030303_latest03",
+        summary={"service_count": 2, "container_count": 1, "issue_count": 1},
+        include_report=True,
+    )
+    _write_task_files(
+        tmp_path,
+        task_id="tsk_20260412_020202_middle02",
+        summary={"service_count": 1, "container_count": 1, "issue_count": 0},
+        include_report=False,
+    )
+
+    response = client.get("/api/tasks")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert [item["task_id"] for item in payload["data"]] == [
+        "tsk_20260412_030303_latest03",
+        "tsk_20260412_020202_middle02",
+        "tsk_20260412_010101_older001",
+    ]
+    assert payload["data"][0]["status"] == "rendered"
+    assert payload["data"][0]["report_file_path"] == (
+        "outputs/tsk_20260412_030303_latest03/report.docx"
+    )
+    assert payload["data"][0]["created_at"] == "2026-04-12T03:03:03Z"
+    assert payload["data"][1]["summary"] == {
+        "service_count": 1,
+        "container_count": 1,
+        "issue_count": 0,
+    }
+    assert payload["data"][2]["unified_json_path"] == (
+        "workdir/tsk_20260412_010101_older001/unified.json"
+    )
 
 
 def test_get_task_report_downloads_existing_docx(
@@ -370,3 +421,97 @@ def _build_docx_bytes(document_text: str) -> bytes:
         archive.writestr("word/document.xml", document_text)
 
     return buffer.getvalue()
+
+
+def _write_task_files(
+    root_dir: Path,
+    *,
+    task_id: str,
+    summary: dict[str, int],
+    include_report: bool,
+) -> None:
+    workdir = root_dir / "workdir" / task_id
+    outputs_dir = root_dir / "outputs" / task_id
+    uploads_dir = root_dir / "uploads"
+    workdir.mkdir(parents=True, exist_ok=True)
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    outputs_dir.mkdir(parents=True, exist_ok=True)
+
+    (uploads_dir / f"{task_id}.zip").write_bytes(b"zip")
+
+    unified_json = {
+        "schema_version": "unified-json/v1",
+        "task_id": task_id,
+        "generated_at": "2026-04-12T00:00:00Z",
+        "host_info": {
+            "hostname": "host-a",
+            "ip": None,
+            "os_name": None,
+            "os_version": None,
+            "kernel_version": None,
+            "timezone": None,
+            "uptime_seconds": None,
+            "last_boot_at": None,
+        },
+        "summary": {
+            "overall_status": "warning" if summary["issue_count"] else "healthy",
+            "service_count": summary["service_count"],
+            "service_running_count": summary["service_count"],
+            "container_count": summary["container_count"],
+            "container_running_count": summary["container_count"],
+            "issue_count": summary["issue_count"],
+            "issue_by_severity": {
+                "critical": 0,
+                "high": 0,
+                "medium": summary["issue_count"],
+                "low": 0,
+                "info": 0,
+            },
+        },
+        "services": [],
+        "containers": [],
+        "issues": [],
+        "warnings": [],
+        "metadata": {},
+    }
+
+    report_payload = {
+        "payload_version": "report-payload/v1",
+        "report": {
+            "title": "Inspection Report",
+            "generated_at": "2026-04-12T00:00:00Z",
+            "task_id": task_id,
+            "report_lang": "zh-CN",
+        },
+        "host": {
+            "hostname": "host-a",
+            "ip": None,
+            "os": None,
+            "kernel_version": None,
+            "timezone": None,
+        },
+        "summary": {
+            "overall_status": "warning" if summary["issue_count"] else "healthy",
+            "overall_status_label": "Warning" if summary["issue_count"] else "Healthy",
+            "service_count": summary["service_count"],
+            "service_running_count": summary["service_count"],
+            "container_count": summary["container_count"],
+            "container_running_count": summary["container_count"],
+            "issue_count": summary["issue_count"],
+        },
+        "service_rows": [],
+        "container_rows": [],
+        "issue_rows": [],
+        "highlights": [],
+        "recommendations": [],
+        "appendix": {},
+    }
+
+    (workdir / "unified.json").write_text(json.dumps(unified_json), encoding="utf-8")
+    (workdir / "report_payload.json").write_text(
+        json.dumps(report_payload),
+        encoding="utf-8",
+    )
+
+    if include_report:
+        (outputs_dir / "report.docx").write_bytes(_build_docx_bytes("Report content"))

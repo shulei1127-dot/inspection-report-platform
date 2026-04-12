@@ -64,7 +64,10 @@ Expected response:
 
 The repository now includes a real HTTP-based Carbone adapter and a dedicated render endpoint:
 
+- `GET /api/tasks`
+- `GET /api/tasks/{task_id}`
 - `POST /api/tasks/{task_id}/render-report`
+- `GET /api/tasks/{task_id}/report`
 
 The current MVP keeps one fixed template:
 

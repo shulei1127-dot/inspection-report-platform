@@ -8,6 +8,7 @@ from app.schemas.tasks import (
     TaskCreateOptions,
     TaskCreateSuccessResponse,
     TaskErrorResponse,
+    TaskListSuccessResponse,
     TaskResultSuccessResponse,
 )
 from app.services.report_rendering_service import render_task_report
@@ -17,6 +18,7 @@ from app.services.task_service import (
     create_task_from_upload,
     get_task_report_path,
     get_task_result,
+    list_task_results,
 )
 
 
@@ -53,6 +55,16 @@ async def create_task(
         )
 
     return TaskCreateSuccessResponse(data=data)
+
+
+@router.get(
+    "/api/tasks",
+    response_model=TaskListSuccessResponse,
+    status_code=200,
+    summary="List recent inspection tasks",
+)
+async def list_tasks() -> TaskListSuccessResponse:
+    return TaskListSuccessResponse(data=list_task_results())
 
 
 @router.get(

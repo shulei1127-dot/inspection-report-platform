@@ -38,6 +38,7 @@ class TaskResultData(BaseModel):
     task_id: str
     status: Literal["processing", "completed", "rendered"]
     contract_version: str = "task-response/v1"
+    created_at: str | None = None
     unified_json_path: str | None = None
     report_payload_path: str | None = None
     report_file_path: str | None = None
@@ -47,6 +48,11 @@ class TaskResultData(BaseModel):
 class TaskResultSuccessResponse(BaseModel):
     success: Literal[True] = True
     data: TaskResultData
+
+
+class TaskListSuccessResponse(BaseModel):
+    success: Literal[True] = True
+    data: list[TaskResultData]
 
 
 class RenderReportData(BaseModel):

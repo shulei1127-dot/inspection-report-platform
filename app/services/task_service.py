@@ -171,47 +171,56 @@ def generate_task_id() -> str:
 
 
 def get_task_result(task_id: str) -> TaskResultData:
-    settings = get_settings()
-    task_workdir = settings.workdir_dir / task_id
-    unified_json_path = task_workdir / "unified.json"
-    report_payload_path = task_workdir / "report_payload.json"
-    report_file_path = settings.outputs_dir / task_id / "report.docx"
-    stored_zip_path = settings.uploads_dir / f"{task_id}.zip"
-
-    if not any(
-        path.exists()
-        for path in [task_workdir, unified_json_path, report_payload_path, report_file_path, stored_zip_path]
-    ):
-        raise TaskLookupError(
-            status_code=404,
-            code="task_not_found",
-            message="Task result does not exist.",
-            details={"task_id": task_id},
-        )
-
-    summary = _load_task_summary(unified_json_path)
-
-    status = "processing"
-    if report_file_path.exists():
-        status = "rendered"
-    elif unified_json_path.exists() and report_payload_path.exists():
-        status = "completed"
+    artifact_paths = _resolve_task_paths(task_id)
+    _ensure_task_exists(task_id, artifact_paths=artifact_paths)
+    summary = _load_task_summary(artifact_paths["unified_json_path"])
+    status = _derive_task_status(
+        unified_json_path=artifact_paths["unified_json_path"],
+        report_payload_path=artifact_paths["report_payload_path"],
+        report_file_path=artifact_paths["report_file_path"],
+    )
 
     return TaskResultData(
         task_id=task_id,
         status=status,
-        unified_json_path=unified_json_path.as_posix() if unified_json_path.exists() else None,
-        report_payload_path=(
-            report_payload_path.as_posix() if report_payload_path.exists() else None
+        created_at=_derive_task_created_at(task_id, artifact_paths=artifact_paths),
+        unified_json_path=(
+            artifact_paths["unified_json_path"].as_posix()
+            if artifact_paths["unified_json_path"].exists()
+            else None
         ),
-        report_file_path=report_file_path.as_posix() if report_file_path.exists() else None,
+        report_payload_path=(
+            artifact_paths["report_payload_path"].as_posix()
+            if artifact_paths["report_payload_path"].exists()
+            else None
+        ),
+        report_file_path=(
+            artifact_paths["report_file_path"].as_posix()
+            if artifact_paths["report_file_path"].exists()
+            else None
+        ),
         summary=summary,
     )
 
 
-def get_task_report_path(task_id: str) -> Path:
+def list_task_results() -> list[TaskResultData]:
     settings = get_settings()
-    report_file_path = settings.outputs_dir / task_id / "report.docx"
+    task_ids = _discover_task_ids(
+        uploads_dir=settings.uploads_dir,
+        workdir_dir=settings.workdir_dir,
+        outputs_dir=settings.outputs_dir,
+    )
+
+    task_results = [get_task_result(task_id) for task_id in task_ids]
+    task_results.sort(
+        key=lambda result: _task_sort_key(result),
+        reverse=True,
+    )
+    return task_results
+
+
+def get_task_report_path(task_id: str) -> Path:
+    report_file_path = _resolve_task_paths(task_id)["report_file_path"]
     if not report_file_path.exists():
         raise TaskLookupError(
             status_code=404,
@@ -296,3 +305,102 @@ def _load_task_summary(unified_json_path: Path) -> TaskSummary:
         container_count=unified_json.summary.container_count,
         issue_count=unified_json.summary.issue_count,
     )
+
+
+def _resolve_task_paths(task_id: str) -> dict[str, Path]:
+    settings = get_settings()
+    task_workdir = settings.workdir_dir / task_id
+    return {
+        "stored_zip_path": settings.uploads_dir / f"{task_id}.zip",
+        "task_workdir": task_workdir,
+        "unified_json_path": task_workdir / "unified.json",
+        "report_payload_path": task_workdir / "report_payload.json",
+        "report_file_path": settings.outputs_dir / task_id / "report.docx",
+    }
+
+
+def _ensure_task_exists(task_id: str, *, artifact_paths: dict[str, Path]) -> None:
+    if not any(path.exists() for path in artifact_paths.values()):
+        raise TaskLookupError(
+            status_code=404,
+            code="task_not_found",
+            message="Task result does not exist.",
+            details={"task_id": task_id},
+        )
+
+
+def _derive_task_status(
+    *,
+    unified_json_path: Path,
+    report_payload_path: Path,
+    report_file_path: Path,
+) -> str:
+    if report_file_path.exists():
+        return "rendered"
+    if unified_json_path.exists() and report_payload_path.exists():
+        return "completed"
+    return "processing"
+
+
+def _derive_task_created_at(task_id: str, *, artifact_paths: dict[str, Path]) -> str | None:
+    parsed_from_task_id = _parse_created_at_from_task_id(task_id)
+    if parsed_from_task_id is not None:
+        return parsed_from_task_id
+
+    mtimes = [
+        path.stat().st_mtime
+        for path in artifact_paths.values()
+        if path.exists()
+    ]
+    if not mtimes:
+        return None
+
+    latest_mtime = max(mtimes)
+    return (
+        datetime.fromtimestamp(latest_mtime, tz=UTC)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
+def _parse_created_at_from_task_id(task_id: str) -> str | None:
+    parts = task_id.split("_")
+    if len(parts) < 4 or parts[0] != "tsk":
+        return None
+
+    timestamp = f"{parts[1]}_{parts[2]}"
+    try:
+        parsed = datetime.strptime(timestamp, "%Y%m%d_%H%M%S").replace(tzinfo=UTC)
+    except ValueError:
+        return None
+    return parsed.isoformat().replace("+00:00", "Z")
+
+
+def _discover_task_ids(
+    *,
+    uploads_dir: Path,
+    workdir_dir: Path,
+    outputs_dir: Path,
+) -> list[str]:
+    task_ids: set[str] = set()
+
+    if uploads_dir.exists():
+        for path in uploads_dir.glob("tsk_*.zip"):
+            task_ids.add(path.stem)
+
+    if workdir_dir.exists():
+        for path in workdir_dir.iterdir():
+            if path.is_dir() and path.name.startswith("tsk_"):
+                task_ids.add(path.name)
+
+    if outputs_dir.exists():
+        for path in outputs_dir.iterdir():
+            if path.is_dir() and path.name.startswith("tsk_"):
+                task_ids.add(path.name)
+
+    return sorted(task_ids)
+
+
+def _task_sort_key(task_result: TaskResultData) -> tuple[str, str]:
+    return (task_result.created_at or "", task_result.task_id)
