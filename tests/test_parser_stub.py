@@ -149,10 +149,13 @@ def test_build_unified_json_generates_unhealthy_container_issue(tmp_path: Path) 
 
     assert unified_json.containers[0].status == "failed"
     assert unified_json.summary.overall_status == "warning"
-    assert unified_json.summary.issue_count == 1
-    assert unified_json.issues[0].id == "container-api-unhealthy"
-    assert unified_json.issues[0].severity == "medium"
-    assert unified_json.issues[0].category == "container"
+    assert unified_json.summary.issue_count == 2
+    assert [issue.id for issue in unified_json.issues] == [
+        "host-last-boot-missing",
+        "container-api-unhealthy",
+    ]
+    assert unified_json.issues[1].severity == "medium"
+    assert unified_json.issues[1].category == "container"
 
 
 def test_build_unified_json_keeps_issues_empty_when_runtime_is_healthy(
@@ -219,6 +222,143 @@ def test_build_unified_json_generates_host_issues_for_missing_host_fields(
         "host-hostname-missing",
         "host-kernel-version-missing",
         "host-timezone-missing",
-        "host-uptime-missing",
+        "host-uptime-invalid",
     ]
     assert all(issue.category == "host" for issue in unified_json.issues)
+
+
+def test_build_unified_json_generates_issue_when_uptime_exists_without_last_boot(
+    tmp_path: Path,
+) -> None:
+    extracted_dir = tmp_path / "extracted"
+    extracted_dir.mkdir()
+    (extracted_dir / "system_info").write_text(
+        "\n".join(
+            [
+                "hostname=host-c",
+                "kernel=6.8.0",
+                "timezone=UTC",
+                "uptime_seconds=3600",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    unified_json = build_unified_json(
+        "tsk_test_uptime_without_last_boot",
+        extracted_dir,
+        archive_name="uptime-only.zip",
+        archive_size_bytes=555,
+    )
+
+    assert unified_json.host_info.uptime_seconds == 3600
+    assert unified_json.host_info.last_boot_at is None
+    assert "host-last-boot-missing" in [issue.id for issue in unified_json.issues]
+
+
+def test_build_unified_json_generates_issue_when_last_boot_exists_without_uptime(
+    tmp_path: Path,
+) -> None:
+    extracted_dir = tmp_path / "extracted"
+    extracted_dir.mkdir()
+    (extracted_dir / "system_info").write_text(
+        "\n".join(
+            [
+                "hostname=host-d",
+                "kernel=6.8.0",
+                "timezone=UTC",
+                "last_boot_at=2026-04-12T00:00:00Z",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    unified_json = build_unified_json(
+        "tsk_test_last_boot_without_uptime",
+        extracted_dir,
+        archive_name="last-boot-only.zip",
+        archive_size_bytes=666,
+    )
+
+    issue_ids = [issue.id for issue in unified_json.issues]
+    assert unified_json.host_info.last_boot_at == "2026-04-12T00:00:00Z"
+    assert "host-uptime-missing" in issue_ids
+    assert "host-uptime-last-boot-inconsistent" in issue_ids
+
+
+def test_build_unified_json_generates_issue_for_invalid_uptime_seconds(
+    tmp_path: Path,
+) -> None:
+    cases = [
+        ("-1", "Uptime was present but the value is negative."),
+        ("0", "Uptime was present but the value is zero."),
+        ("315360001", "Uptime was present but the value is abnormally large."),
+    ]
+
+    for index, (uptime_value, expected_description) in enumerate(cases, start=1):
+        extracted_dir = tmp_path / f"extracted_{index}"
+        extracted_dir.mkdir()
+        (extracted_dir / "system_info").write_text(
+            "\n".join(
+                [
+                    "hostname=host-e",
+                    "kernel=6.8.0",
+                    "timezone=UTC",
+                    f"uptime_seconds={uptime_value}",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        unified_json = build_unified_json(
+            f"tsk_test_invalid_uptime_{index}",
+            extracted_dir,
+            archive_name="invalid-uptime.zip",
+            archive_size_bytes=777,
+        )
+
+        issue_ids = [issue.id for issue in unified_json.issues]
+        uptime_issue = next(
+            issue for issue in unified_json.issues if issue.id == "host-uptime-invalid"
+        )
+
+        assert unified_json.host_info.uptime_seconds is None
+        assert "host-uptime-invalid" in issue_ids
+        assert uptime_issue.description == expected_description
+
+
+def test_build_unified_json_generates_issue_when_last_boot_is_in_future(
+    tmp_path: Path,
+) -> None:
+    extracted_dir = tmp_path / "extracted"
+    extracted_dir.mkdir()
+    (extracted_dir / "system_info").write_text(
+        "\n".join(
+            [
+                "hostname=future-host",
+                "kernel=6.8.0",
+                "timezone=UTC",
+                "uptime_seconds=3600",
+                "last_boot_at=2999-01-01T00:00:00Z",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    unified_json = build_unified_json(
+        "tsk_test_future_last_boot",
+        extracted_dir,
+        archive_name="future-last-boot.zip",
+        archive_size_bytes=888,
+    )
+
+    future_issue = next(
+        issue for issue in unified_json.issues if issue.id == "host-last-boot-in-future"
+    )
+
+    assert unified_json.host_info.last_boot_at == "2999-01-01T00:00:00Z"
+    assert future_issue.severity == "medium"

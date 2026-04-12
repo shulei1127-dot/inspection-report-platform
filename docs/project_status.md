@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-System Info Extension And Host Issue V1 MVP
+Host Issue V2 Uptime And Last Boot Consistency MVP
 
 ## Completed In This Iteration
 
@@ -54,12 +54,16 @@ System Info Extension And Host Issue V1 MVP
 - extended `system_info` parsing to support `ip`, `timezone`, `uptime_seconds`, and `last_boot_at`
 - added host issue v1 for missing hostname, kernel version, timezone, and uptime
 - verified that host completeness issues are generated through the existing `issues[]` pipeline without changing the contract
+- added host issue v2 consistency checks for `uptime_seconds` and `last_boot_at`
+- added sanity validation for invalid uptime values including negative, zero, and clearly abnormal values
+- added a conservative future-boot check when `last_boot_at` is later than parser generation time
 
 ## Pending
 
 - real log parsing into unified JSON
 - richer issue severity and root-cause analysis
 - richer host diagnostics beyond information completeness checks
+- deeper host time consistency diagnostics beyond basic impossible/future-value checks
 - product-line and device-specific multi-template system
 - AI analysis workflow
 - frontend
@@ -72,6 +76,7 @@ System Info Extension And Host Issue V1 MVP
 - The parser is no longer pure stub: `system_info`, `systemctl_status`, and `docker_ps` now produce partial real parsed data, while the rest of the contract still falls back to defaults.
 - Issue generation is still rule-based MVP logic and currently only covers a small, explicit status set for services and containers.
 - Host issues are currently limited to missing-information checks and do not attempt deeper host diagnosis.
+- Host consistency checks now cover a minimal uptime/last-boot relationship, but they still avoid broad clock-skew or NTP judgment.
 - `templates/inspection_report.docx` is the current MVP default placeholder template and is intended only to validate the single-template rendering path.
 - Report rendering now targets the real Carbone HTTP API, and the adapter shape is aligned with official HTTP API documentation.
 - Real local rendering is now verified on this machine with a cached official Carbone image.

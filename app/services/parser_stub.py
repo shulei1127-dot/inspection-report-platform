@@ -29,6 +29,8 @@ class HostParseResult:
     host_info: HostInfo
     explicit_hostname_found: bool
     uptime_value_present: bool
+    uptime_invalid_reason: str | None
+    last_boot_value_present: bool
 
 
 def build_unified_json(
@@ -39,6 +41,7 @@ def build_unified_json(
     archive_size_bytes: int | None = None,
 ) -> UnifiedJsonV1:
     file_count, dir_count = _scan_extracted_dir(extracted_dir)
+    generated_at = _utc_now_isoformat()
 
     system_info_path = _find_input_file(extracted_dir, SYSTEM_INFO_NAMES)
     systemctl_status_path = _find_input_file(extracted_dir, SYSTEMCTL_STATUS_NAMES)
@@ -52,12 +55,17 @@ def build_unified_json(
     host_info = host_parse_result.host_info
     services = _parse_systemctl_status(systemctl_status_path)
     containers = _parse_docker_ps(docker_ps_path)
-    issues = _build_issues(host_parse_result, services, containers)
+    issues = _build_issues(
+        host_parse_result,
+        services,
+        containers,
+        generated_at=generated_at,
+    )
 
     return UnifiedJsonV1(
         schema_version="unified-json/v1",
         task_id=task_id,
-        generated_at=_utc_now_isoformat(),
+        generated_at=generated_at,
         source=UnifiedJsonSource(
             archive_name=archive_name,
             archive_size_bytes=archive_size_bytes,
@@ -65,7 +73,7 @@ def build_unified_json(
         ),
         parser=UnifiedJsonParser(
             name="default-linux-parser",
-            version="0.4.0",
+            version="0.5.0",
         ),
         host_info=host_info,
         summary=_build_summary(services, containers, issues),
@@ -161,6 +169,8 @@ def _parse_host_info(
             ),
             explicit_hostname_found=False,
             uptime_value_present=False,
+            uptime_invalid_reason=None,
+            last_boot_value_present=False,
         )
 
     content = system_info_path.read_text(encoding="utf-8", errors="ignore")
@@ -175,7 +185,10 @@ def _parse_host_info(
     ip = kv.get("ip") or kv.get("ip_address") or kv.get("primary_ip")
     timezone = kv.get("timezone") or kv.get("time_zone") or kv.get("tz")
     uptime_raw = kv.get("uptime_seconds") or kv.get("uptime")
-    uptime_seconds = _parse_uptime_seconds(uptime_raw) if uptime_raw else None
+    uptime_parse = _parse_uptime_seconds(uptime_raw) if uptime_raw else UptimeParseResult(
+        seconds=None,
+        invalid_reason=None,
+    )
     last_boot_raw = (
         kv.get("last_boot_at")
         or kv.get("last_boot_time")
@@ -202,11 +215,13 @@ def _parse_host_info(
             os_version=os_version,
             kernel_version=kernel_version,
             timezone=timezone,
-            uptime_seconds=uptime_seconds,
+            uptime_seconds=uptime_parse.seconds,
             last_boot_at=last_boot_at,
         ),
         explicit_hostname_found=bool(hostname_value),
         uptime_value_present=uptime_raw is not None,
+        uptime_invalid_reason=uptime_parse.invalid_reason,
+        last_boot_value_present=last_boot_raw is not None,
     )
 
 
@@ -230,17 +245,27 @@ def _parse_key_value_text(content: str) -> dict[str, str]:
     return values
 
 
-def _parse_uptime_seconds(value: str) -> int | None:
+@dataclass(frozen=True)
+class UptimeParseResult:
+    seconds: int | None
+    invalid_reason: str | None
+
+
+def _parse_uptime_seconds(value: str) -> UptimeParseResult:
     normalized = value.strip().lower()
     if not normalized:
-        return None
+        return UptimeParseResult(seconds=None, invalid_reason="empty")
 
-    if normalized.isdigit():
-        return int(normalized)
+    if re.fullmatch(r"-?\d+", normalized):
+        return _validate_uptime_seconds(int(normalized))
 
     compact_matches = re.findall(r"(\d+)\s*([dhms])", normalized)
     if compact_matches:
-        return sum(int(amount) * _duration_unit_seconds(unit) for amount, unit in compact_matches)
+        total = sum(
+            int(amount) * _duration_unit_seconds(unit)
+            for amount, unit in compact_matches
+        )
+        return _validate_uptime_seconds(total)
 
     word_matches = re.findall(
         r"(\d+)\s*(day|days|hour|hours|minute|minutes|second|seconds)",
@@ -250,9 +275,19 @@ def _parse_uptime_seconds(value: str) -> int | None:
         total = 0
         for amount, unit in word_matches:
             total += int(amount) * _duration_unit_seconds(unit)
-        return total
+        return _validate_uptime_seconds(total)
 
-    return None
+    return UptimeParseResult(seconds=None, invalid_reason="unparseable")
+
+
+def _validate_uptime_seconds(value: int) -> UptimeParseResult:
+    if value < 0:
+        return UptimeParseResult(seconds=None, invalid_reason="negative")
+    if value == 0:
+        return UptimeParseResult(seconds=None, invalid_reason="zero")
+    if value > 315360000:
+        return UptimeParseResult(seconds=None, invalid_reason="too_large")
+    return UptimeParseResult(seconds=value, invalid_reason=None)
 
 
 def _duration_unit_seconds(unit: str) -> int:
@@ -472,10 +507,15 @@ def _build_issues(
     host_parse_result: HostParseResult,
     services: list[UnifiedJsonService],
     containers: list[UnifiedJsonContainer],
+    *,
+    generated_at: str,
 ) -> list[UnifiedJsonIssue]:
     issues: list[UnifiedJsonIssue] = []
 
-    host_issues = _build_host_issues(host_parse_result)
+    host_issues = _build_host_issues(
+        host_parse_result,
+        generated_at=generated_at,
+    )
     issues.extend(host_issues)
 
     for service in services:
@@ -491,7 +531,11 @@ def _build_issues(
     return issues
 
 
-def _build_host_issues(host_parse_result: HostParseResult) -> list[UnifiedJsonIssue]:
+def _build_host_issues(
+    host_parse_result: HostParseResult,
+    *,
+    generated_at: str,
+) -> list[UnifiedJsonIssue]:
     host_info = host_parse_result.host_info
     issues: list[UnifiedJsonIssue] = []
 
@@ -538,17 +582,21 @@ def _build_host_issues(host_parse_result: HostParseResult) -> list[UnifiedJsonIs
         )
 
     if host_info.uptime_seconds is None:
-        description = (
-            "Uptime was present in system_info but could not be parsed into seconds."
-            if host_parse_result.uptime_value_present
-            else "Uptime could not be found in system_info."
-        )
+        description = _build_uptime_missing_description(host_parse_result)
         issues.append(
             UnifiedJsonIssue(
-                id="host-uptime-missing",
+                id=(
+                    "host-uptime-invalid"
+                    if host_parse_result.uptime_invalid_reason is not None
+                    else "host-uptime-missing"
+                ),
                 severity="low",
                 category="host",
-                title="Host uptime is missing",
+                title=(
+                    "Host uptime is invalid"
+                    if host_parse_result.uptime_invalid_reason is not None
+                    else "Host uptime is missing"
+                ),
                 description=description,
                 suggestion="Collect uptime in a supported format such as integer seconds or duration tokens.",
                 related_object_type="host",
@@ -556,7 +604,75 @@ def _build_host_issues(host_parse_result: HostParseResult) -> list[UnifiedJsonIs
             )
         )
 
+    if host_info.uptime_seconds is not None and not host_info.last_boot_at:
+        issues.append(
+            UnifiedJsonIssue(
+                id="host-last-boot-missing",
+                severity="low",
+                category="host",
+                title="Host last boot time is missing",
+                description="Uptime was parsed successfully but last_boot_at is missing.",
+                suggestion="Collect last boot time in system_info when uptime is available.",
+                related_object_type="host",
+                related_object_name=host_info.hostname,
+            )
+        )
+
+    if host_parse_result.last_boot_value_present and host_info.last_boot_at and host_info.uptime_seconds is None:
+        issues.append(
+            UnifiedJsonIssue(
+                id="host-uptime-last-boot-inconsistent",
+                severity="low",
+                category="host",
+                title="Host uptime is missing while last boot time exists",
+                description="last_boot_at was parsed successfully but uptime_seconds is missing or invalid.",
+                suggestion="Collect both uptime and last boot time in compatible formats.",
+                related_object_type="host",
+                related_object_name=host_info.hostname,
+            )
+        )
+
+    if host_info.last_boot_at and _is_future_relative_to_generated_at(
+        host_info.last_boot_at,
+        generated_at,
+    ):
+        issues.append(
+            UnifiedJsonIssue(
+                id="host-last-boot-in-future",
+                severity="medium",
+                category="host",
+                title="Host last boot time is later than task time",
+                description="Parsed last_boot_at is later than the parser generation time.",
+                suggestion="Check host time settings and the source value collected in system_info.",
+                related_object_type="host",
+                related_object_name=host_info.hostname,
+            )
+        )
+
     return issues
+
+
+def _build_uptime_missing_description(host_parse_result: HostParseResult) -> str:
+    if not host_parse_result.uptime_value_present:
+        return "Uptime could not be found in system_info."
+
+    reason = host_parse_result.uptime_invalid_reason
+    if reason == "negative":
+        return "Uptime was present but the value is negative."
+    if reason == "zero":
+        return "Uptime was present but the value is zero."
+    if reason == "too_large":
+        return "Uptime was present but the value is abnormally large."
+    return "Uptime was present in system_info but could not be parsed into seconds."
+
+
+def _is_future_relative_to_generated_at(last_boot_at: str, generated_at: str) -> bool:
+    try:
+        last_boot_dt = datetime.fromisoformat(last_boot_at.replace("Z", "+00:00"))
+        generated_at_dt = datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return last_boot_dt > generated_at_dt
 
 
 def _build_service_issue(service: UnifiedJsonService) -> UnifiedJsonIssue | None:
