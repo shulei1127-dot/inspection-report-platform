@@ -22,6 +22,11 @@ SYSTEMCTL_STATUS_NAMES = {
     "systemctl_status.log",
 }
 DOCKER_PS_NAMES = {"docker_ps", "docker_ps.txt", "docker_ps.log"}
+PREFERRED_INPUT_PATHS = {
+    "system_info": Path("system/system_info"),
+    "systemctl_status": Path("system/systemctl_status"),
+    "docker_ps": Path("containers/docker_ps"),
+}
 
 
 @dataclass(frozen=True)
@@ -43,9 +48,21 @@ def build_unified_json(
     file_count, dir_count = _scan_extracted_dir(extracted_dir)
     generated_at = _utc_now_isoformat()
 
-    system_info_path = _find_input_file(extracted_dir, SYSTEM_INFO_NAMES)
-    systemctl_status_path = _find_input_file(extracted_dir, SYSTEMCTL_STATUS_NAMES)
-    docker_ps_path = _find_input_file(extracted_dir, DOCKER_PS_NAMES)
+    system_info_path = _find_input_file(
+        extracted_dir,
+        preferred_relative_path=PREFERRED_INPUT_PATHS["system_info"],
+        names=SYSTEM_INFO_NAMES,
+    )
+    systemctl_status_path = _find_input_file(
+        extracted_dir,
+        preferred_relative_path=PREFERRED_INPUT_PATHS["systemctl_status"],
+        names=SYSTEMCTL_STATUS_NAMES,
+    )
+    docker_ps_path = _find_input_file(
+        extracted_dir,
+        preferred_relative_path=PREFERRED_INPUT_PATHS["docker_ps"],
+        names=DOCKER_PS_NAMES,
+    )
 
     hostname_fallback = _derive_hostname(extracted_dir, archive_name)
     host_parse_result = _parse_host_info(
@@ -130,7 +147,16 @@ def _scan_extracted_dir(extracted_dir: Path) -> tuple[int, int]:
     return file_count, dir_count
 
 
-def _find_input_file(extracted_dir: Path, names: set[str]) -> Path | None:
+def _find_input_file(
+    extracted_dir: Path,
+    *,
+    preferred_relative_path: Path,
+    names: set[str],
+) -> Path | None:
+    preferred_path = extracted_dir / preferred_relative_path
+    if preferred_path.is_file():
+        return preferred_path
+
     candidates = sorted(
         path
         for path in extracted_dir.rglob("*")

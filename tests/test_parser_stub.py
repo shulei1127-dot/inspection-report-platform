@@ -4,6 +4,40 @@ from app.services.parser_stub import build_unified_json
 
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "real_parser_v1"
+SPEC_V1_FIXTURE_DIR = Path(__file__).parent / "fixtures" / "input_bundle_spec_v1"
+
+
+def test_build_unified_json_parses_spec_v1_bundle_layout(tmp_path: Path) -> None:
+    extracted_dir = tmp_path / "extracted"
+    extracted_dir.mkdir()
+
+    for fixture_path in sorted(path for path in SPEC_V1_FIXTURE_DIR.rglob("*") if path.is_file()):
+        target_path = extracted_dir / fixture_path.relative_to(SPEC_V1_FIXTURE_DIR)
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_text(
+            fixture_path.read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+
+    unified_json = build_unified_json(
+        "tsk_test_spec_v1_bundle",
+        extracted_dir,
+        archive_name="spec-v1.zip",
+        archive_size_bytes=999,
+    )
+
+    assert unified_json.host_info.hostname == "host-a"
+    assert unified_json.host_info.ip == "10.0.0.8"
+    assert [service.name for service in unified_json.services] == [
+        "nginx",
+        "docker",
+        "fail2ban",
+        "auditd",
+    ]
+    assert [container.name for container in unified_json.containers] == [
+        "redis",
+        "worker",
+    ]
 
 
 def test_build_unified_json_parses_supported_files(tmp_path: Path) -> None:
@@ -193,6 +227,39 @@ def test_build_unified_json_keeps_issues_empty_when_runtime_is_healthy(
     assert unified_json.summary.overall_status == "healthy"
     assert unified_json.summary.issue_count == 0
     assert unified_json.issues == []
+
+
+def test_build_unified_json_keeps_output_valid_when_input_format_is_invalid(
+    tmp_path: Path,
+) -> None:
+    extracted_dir = tmp_path / "extracted"
+    (extracted_dir / "system").mkdir(parents=True)
+    (extracted_dir / "containers").mkdir(parents=True)
+    (extracted_dir / "system" / "system_info").write_text(
+        "hostname\nPRETTY_NAME Ubuntu 24.04\nkernel\n",
+        encoding="utf-8",
+    )
+    (extracted_dir / "system" / "systemctl_status").write_text(
+        "NOT A SYSTEMCTL TABLE\nsomething unexpected\n",
+        encoding="utf-8",
+    )
+    (extracted_dir / "containers" / "docker_ps").write_text(
+        "BROKEN HEADER\nsomething unexpected\n",
+        encoding="utf-8",
+    )
+
+    unified_json = build_unified_json(
+        "tsk_test_invalid_bundle_format",
+        extracted_dir,
+        archive_name="invalid-format.zip",
+        archive_size_bytes=1000,
+    )
+
+    assert unified_json.schema_version == "unified-json/v1"
+    assert unified_json.host_info.hostname == "invalid-format"
+    assert unified_json.services == []
+    assert unified_json.containers == []
+    assert unified_json.summary.issue_count >= 1
 
 
 def test_build_unified_json_generates_host_issues_for_missing_host_fields(

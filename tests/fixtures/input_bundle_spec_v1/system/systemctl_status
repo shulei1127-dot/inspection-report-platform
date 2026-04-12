@@ -1,0 +1,7 @@
+UNIT LOAD ACTIVE SUB DESCRIPTION
+nginx.service loaded active running A high performance web server
+docker.service loaded active running Docker Application Container Engine
+fail2ban.service loaded failed failed Fail2Ban Service
+auditd.service loaded inactive dead Security Auditing Service
+
+4 loaded units listed.

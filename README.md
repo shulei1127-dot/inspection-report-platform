@@ -137,6 +137,26 @@ Then:
 3. call `POST /api/tasks/{task_id}/render-report`
 4. confirm `outputs/{task_id}/report.docx` exists and opens as a DOCX file
 
+## Input Bundle V1
+
+The current parser support is now formalized in:
+
+- `docs/input_bundle_spec_v1.md`
+
+Recommended zip layout:
+
+```text
+<bundle-root>/
+  system/
+    system_info
+    systemctl_status
+  containers/
+    docker_ps
+```
+
+The current parser prefers these canonical v1 paths first and only keeps a
+narrow legacy fallback for older local fixtures.
+
 ## Development Rules
 
 - Every new feature, bugfix, or scoped change must start with a plan file under `plans/`.

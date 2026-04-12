@@ -12,6 +12,7 @@ from app.schemas.unified_json import UnifiedJsonV1
 
 client = TestClient(app)
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "real_parser_v1"
+SPEC_V1_FIXTURE_DIR = Path(__file__).parent / "fixtures" / "input_bundle_spec_v1"
 
 
 def test_get_task_returns_minimal_result_for_existing_task(
@@ -176,6 +177,37 @@ def test_create_task_parses_supported_files_into_unified_json_and_report_payload
         "container-worker-exited",
     ]
     assert report_payload.appendix["parser_name"] == "default-linux-parser"
+
+
+def test_create_task_parses_input_bundle_spec_v1_layout(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    zip_bytes = _build_zip_bytes(
+        {
+            str(fixture_path.relative_to(SPEC_V1_FIXTURE_DIR)): fixture_path.read_text(encoding="utf-8")
+            for fixture_path in sorted(path for path in SPEC_V1_FIXTURE_DIR.rglob("*") if path.is_file())
+        }
+    )
+
+    response = client.post(
+        "/api/tasks",
+        files={"file": ("spec-v1.zip", zip_bytes, "application/zip")},
+        data={"parser_profile": "default", "report_lang": "zh-CN"},
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    task_id = payload["data"]["task_id"]
+    unified_json = UnifiedJsonV1.model_validate_json(
+        (tmp_path / "workdir" / task_id / "unified.json").read_text(encoding="utf-8")
+    )
+
+    assert unified_json.host_info.hostname == "host-a"
+    assert unified_json.summary.service_count == 4
+    assert unified_json.summary.container_count == 2
 
 
 def test_create_task_uploads_extracts_zip_and_writes_contract_artifacts(
