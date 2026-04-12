@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Host Issue V2 Uptime And Last Boot Consistency MVP
+Minimal Report Delivery APIs MVP
 
 ## Completed In This Iteration
 
@@ -57,6 +57,9 @@ Host Issue V2 Uptime And Last Boot Consistency MVP
 - added host issue v2 consistency checks for `uptime_seconds` and `last_boot_at`
 - added sanity validation for invalid uptime values including negative, zero, and clearly abnormal values
 - added a conservative future-boot check when `last_boot_at` is later than parser generation time
+- added `GET /api/tasks/{task_id}` for minimal task-result lookup based on existing task artifacts
+- added `GET /api/tasks/{task_id}/report` for DOCX report download by `task_id`
+- kept task-result inference file-based without introducing a database
 
 ## Pending
 
@@ -81,3 +84,4 @@ Host Issue V2 Uptime And Last Boot Consistency MVP
 - Report rendering now targets the real Carbone HTTP API, and the adapter shape is aligned with official HTTP API documentation.
 - Real local rendering is now verified on this machine with a cached official Carbone image.
 - Raw shell-level connectivity to Docker Hub is still inconsistent on this machine, but Docker Desktop proxying is sufficient for image pulls and local Carbone runtime startup.
+- Task-result querying and report download now have HTTP delivery endpoints, but task persistence is still inferred from the filesystem rather than stored as explicit records.

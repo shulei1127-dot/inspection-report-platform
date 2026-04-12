@@ -2,16 +2,20 @@ import shutil
 import uuid
 import zipfile
 from datetime import UTC, datetime
+from json import JSONDecodeError
 from pathlib import Path
 
 from fastapi import UploadFile
+from pydantic import ValidationError
 
 from app.core.config import get_settings
+from app.schemas.unified_json import UnifiedJsonV1
 from app.schemas.tasks import (
     TaskCreateData,
     TaskCreateOptions,
     TaskError,
     TaskErrorResponse,
+    TaskResultData,
     TaskSummary,
 )
 from app.services.parser_stub import build_unified_json, persist_unified_json
@@ -23,6 +27,31 @@ from app.services.report_rendering_service import maybe_render_report_from_paylo
 
 
 class TaskUploadError(Exception):
+    def __init__(
+        self,
+        *,
+        status_code: int,
+        code: str,
+        message: str,
+        details: dict[str, str | int | float | bool | None] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.code = code
+        self.message = message
+        self.details = details or {}
+
+    def to_response(self) -> TaskErrorResponse:
+        return TaskErrorResponse(
+            error=TaskError(
+                code=self.code,
+                message=self.message,
+                details=self.details,
+            )
+        )
+
+
+class TaskLookupError(Exception):
     def __init__(
         self,
         *,
@@ -141,6 +170,58 @@ def generate_task_id() -> str:
     return f"tsk_{timestamp}_{suffix}"
 
 
+def get_task_result(task_id: str) -> TaskResultData:
+    settings = get_settings()
+    task_workdir = settings.workdir_dir / task_id
+    unified_json_path = task_workdir / "unified.json"
+    report_payload_path = task_workdir / "report_payload.json"
+    report_file_path = settings.outputs_dir / task_id / "report.docx"
+    stored_zip_path = settings.uploads_dir / f"{task_id}.zip"
+
+    if not any(
+        path.exists()
+        for path in [task_workdir, unified_json_path, report_payload_path, report_file_path, stored_zip_path]
+    ):
+        raise TaskLookupError(
+            status_code=404,
+            code="task_not_found",
+            message="Task result does not exist.",
+            details={"task_id": task_id},
+        )
+
+    summary = _load_task_summary(unified_json_path)
+
+    status = "processing"
+    if report_file_path.exists():
+        status = "rendered"
+    elif unified_json_path.exists() and report_payload_path.exists():
+        status = "completed"
+
+    return TaskResultData(
+        task_id=task_id,
+        status=status,
+        unified_json_path=unified_json_path.as_posix() if unified_json_path.exists() else None,
+        report_payload_path=(
+            report_payload_path.as_posix() if report_payload_path.exists() else None
+        ),
+        report_file_path=report_file_path.as_posix() if report_file_path.exists() else None,
+        summary=summary,
+    )
+
+
+def get_task_report_path(task_id: str) -> Path:
+    settings = get_settings()
+    report_file_path = settings.outputs_dir / task_id / "report.docx"
+    if not report_file_path.exists():
+        raise TaskLookupError(
+            status_code=404,
+            code="report_not_found",
+            message="Rendered report file does not exist.",
+            details={"task_id": task_id},
+        )
+    return report_file_path
+
+
 def _save_upload(upload: UploadFile, target_path: Path) -> None:
     upload.file.seek(0)
     with target_path.open("wb") as buffer:
@@ -197,3 +278,21 @@ def _cleanup_failed_task(zip_path: Path, task_workdir: Path) -> None:
         zip_path.unlink()
     if task_workdir.exists():
         shutil.rmtree(task_workdir)
+
+
+def _load_task_summary(unified_json_path: Path) -> TaskSummary:
+    if not unified_json_path.exists():
+        return TaskSummary()
+
+    try:
+        unified_json = UnifiedJsonV1.model_validate_json(
+            unified_json_path.read_text(encoding="utf-8")
+        )
+    except (OSError, JSONDecodeError, ValidationError):
+        return TaskSummary()
+
+    return TaskSummary(
+        service_count=unified_json.summary.service_count,
+        container_count=unified_json.summary.container_count,
+        issue_count=unified_json.summary.issue_count,
+    )

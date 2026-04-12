@@ -1,5 +1,5 @@
 from fastapi import APIRouter, File, Form, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from app.core.config import get_settings
 from app.schemas.tasks import (
@@ -8,9 +8,16 @@ from app.schemas.tasks import (
     TaskCreateOptions,
     TaskCreateSuccessResponse,
     TaskErrorResponse,
+    TaskResultSuccessResponse,
 )
 from app.services.report_rendering_service import render_task_report
-from app.services.task_service import TaskUploadError, create_task_from_upload
+from app.services.task_service import (
+    TaskLookupError,
+    TaskUploadError,
+    create_task_from_upload,
+    get_task_report_path,
+    get_task_result,
+)
 
 
 router = APIRouter()
@@ -46,6 +53,27 @@ async def create_task(
         )
 
     return TaskCreateSuccessResponse(data=data)
+
+
+@router.get(
+    "/api/tasks/{task_id}",
+    response_model=TaskResultSuccessResponse,
+    status_code=200,
+    summary="Get the current result for an inspection task",
+    responses={
+        404: {"model": TaskErrorResponse},
+    },
+)
+async def get_task(task_id: str) -> TaskResultSuccessResponse | JSONResponse:
+    try:
+        data = get_task_result(task_id)
+    except TaskLookupError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=exc.to_response().model_dump(),
+        )
+
+    return TaskResultSuccessResponse(data=data)
 
 
 @router.post(
@@ -93,4 +121,31 @@ async def render_report(task_id: str) -> RenderReportSuccessResponse | JSONRespo
             renderer=result.renderer or "HttpCarboneAdapter",
             status="rendered",
         )
+    )
+
+
+@router.get(
+    "/api/tasks/{task_id}/report",
+    response_model=None,
+    status_code=200,
+    summary="Download the rendered DOCX report for an inspection task",
+    responses={
+        404: {"model": TaskErrorResponse},
+    },
+)
+async def download_report(task_id: str) -> FileResponse | JSONResponse:
+    try:
+        report_path = get_task_report_path(task_id)
+    except TaskLookupError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=exc.to_response().model_dump(),
+        )
+
+    return FileResponse(
+        path=report_path,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ),
+        filename=f"{task_id}.docx",
     )

@@ -14,6 +14,79 @@ client = TestClient(app)
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "real_parser_v1"
 
 
+def test_get_task_returns_minimal_result_for_existing_task(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    create_response = client.post(
+        "/api/tasks",
+        files={"file": ("host-a-logs.zip", _build_zip_bytes({"system.log": "ok\n"}), "application/zip")},
+        data={"parser_profile": "default", "report_lang": "zh-CN"},
+    )
+    assert create_response.status_code == 201
+
+    task_id = create_response.json()["data"]["task_id"]
+
+    response = client.get(f"/api/tasks/{task_id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["data"]["task_id"] == task_id
+    assert payload["data"]["status"] == "completed"
+    assert payload["data"]["unified_json_path"] == f"workdir/{task_id}/unified.json"
+    assert payload["data"]["report_payload_path"] == f"workdir/{task_id}/report_payload.json"
+    assert payload["data"]["report_file_path"] is None
+    assert payload["data"]["summary"]["issue_count"] == 4
+
+
+def test_get_task_report_downloads_existing_docx(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    task_id = "tsk_test_report_download"
+    report_dir = tmp_path / "outputs" / task_id
+    report_dir.mkdir(parents=True)
+    report_path = report_dir / "report.docx"
+    report_bytes = _build_docx_bytes("Report content")
+    report_path.write_bytes(report_bytes)
+
+    response = client.get(f"/api/tasks/{task_id}/report")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    assert "attachment;" in response.headers["content-disposition"]
+    assert f'{task_id}.docx' in response.headers["content-disposition"]
+    assert response.content == report_bytes
+
+
+def test_get_task_report_returns_404_when_report_is_missing(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    response = client.get("/api/tasks/tsk_missing_report/report")
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "success": False,
+        "error": {
+            "code": "report_not_found",
+            "message": "Rendered report file does not exist.",
+            "details": {
+                "task_id": "tsk_missing_report",
+            },
+        },
+    }
+
+
 def test_create_task_parses_supported_files_into_unified_json_and_report_payload(
     tmp_path: Path,
     monkeypatch,
@@ -253,5 +326,15 @@ def _build_zip_bytes(entries: dict[str, str]) -> bytes:
     with zipfile.ZipFile(buffer, "w") as archive:
         for name, content in entries.items():
             archive.writestr(name, content)
+
+    return buffer.getvalue()
+
+
+def _build_docx_bytes(document_text: str) -> bytes:
+    buffer = io.BytesIO()
+
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("[Content_Types].xml", "")
+        archive.writestr("word/document.xml", document_text)
 
     return buffer.getvalue()
