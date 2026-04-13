@@ -89,6 +89,7 @@ Log Analyzer Abstraction v1 MVP
 - added `docs/log_analyzer_api_v1.md` to define the formal analyzer-service boundary, request/response envelopes, version fields, directory source contract, error handling expectations, and v1 non-goals
 - added a minimal `log-analyzer-service/` scaffold with app/api/core/schemas/services/parsers layout, health endpoint, placeholder analyze route, config module, and implementation notes for the next standalone-service phase
 - upgraded `log-analyzer-service/` from placeholder scaffold to a minimal runnable service with real `GET /health`, real directory-based `POST /analyze`, migrated parser support for `system_info` / `systemctl_status` / `docker_ps`, and structured analyzer errors
+- validated remote analyzer integration end-to-end: the platform now successfully calls `log-analyzer-service` in `ANALYZER_MODE=remote`, persists `unified.json` and `report_payload.json`, and remains compatible with downstream DOCX rendering
 
 ## Pending
 
@@ -104,6 +105,7 @@ Log Analyzer Abstraction v1 MVP
 - standalone analyzer service implementation behind the new documented API boundary
 - richer analyzer coverage beyond the current migrated parser set
 - archive-upload mode for analyzer service
+- richer remote analyzer error mapping from structured non-200 analyzer responses
 
 ## Notes
 

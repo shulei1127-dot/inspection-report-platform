@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.schemas.report_payload import ReportPayloadV1
 from app.schemas.unified_json import UnifiedJsonV1
-from app.services.log_analyzer import LogAnalyzerError
+from app.services.log_analyzer import LocalLogAnalyzer, LogAnalyzerError, RemoteLogAnalyzer
 from app.services.report_rendering_service import ReportRenderResult
 from app.services import task_service
 
@@ -830,6 +830,132 @@ def test_create_task_returns_render_failed_when_optional_render_attempt_fails(
     assert task_row["status"] == "render_failed"
     assert task_row["error_code"] == "carbone_unreachable"
     assert task_row["report_payload_path"] == f"workdir/{task_id}/report_payload.json"
+
+
+def test_create_task_remote_mode_happy_path_uses_remote_analyzer(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("ANALYZER_MODE", "remote")
+    monkeypatch.setenv("ANALYZER_BASE_URL", "http://127.0.0.1:8090")
+
+    captured_request: dict[str, object] = {}
+
+    def fake_send_request(self, request):  # noqa: ANN001
+        nonlocal captured_request
+        captured_request = request.model_dump(mode="json")
+        return LocalLogAnalyzer().analyze(request)
+
+    monkeypatch.setattr(RemoteLogAnalyzer, "_send_request", fake_send_request)
+
+    response = client.post(
+        "/api/tasks",
+        files={
+            "file": (
+                "spec-v1.zip",
+                _build_zip_bytes(
+                    {
+                        str(fixture_path.relative_to(SPEC_V1_FIXTURE_DIR)): fixture_path.read_text(encoding="utf-8")
+                        for fixture_path in sorted(
+                            path for path in SPEC_V1_FIXTURE_DIR.rglob("*") if path.is_file()
+                        )
+                    }
+                ),
+                "application/zip",
+            )
+        },
+        data={"parser_profile": "default", "report_lang": "zh-CN"},
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    task_id = payload["data"]["task_id"]
+    task_row = _fetch_task_db_row(tmp_path, task_id)
+    unified_json = UnifiedJsonV1.model_validate_json(
+        (tmp_path / "workdir" / task_id / "unified.json").read_text(encoding="utf-8")
+    )
+
+    assert captured_request["request_version"] == "analyze-request/v1"
+    assert captured_request["source"]["type"] == "directory"
+    assert captured_request["archive_name"] == "spec-v1.zip"
+    assert payload["data"]["status"] == "completed"
+    assert payload["data"]["summary"] == {
+        "service_count": 4,
+        "container_count": 2,
+        "issue_count": 3,
+    }
+    assert unified_json.host_info.hostname == "host-a"
+    assert task_row is not None
+    assert task_row["status"] == "completed"
+
+
+def test_create_task_remote_mode_marks_analyze_failed_when_analyzer_is_unreachable(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("ANALYZER_MODE", "remote")
+    monkeypatch.setenv("ANALYZER_BASE_URL", "http://127.0.0.1:8090")
+
+    def fake_send_request(self, request):  # noqa: ANN001, ARG001
+        raise LogAnalyzerError(
+            code="analyzer_unavailable",
+            message="Failed to reach the analyzer service.",
+            details={"analyzer_base_url": "http://127.0.0.1:8090"},
+        )
+
+    monkeypatch.setattr(RemoteLogAnalyzer, "_send_request", fake_send_request)
+
+    response = client.post(
+        "/api/tasks",
+        files={"file": ("host-a-logs.zip", _build_zip_bytes({"logs/system.log": "system ok\n"}), "application/zip")},
+        data={"parser_profile": "default", "report_lang": "zh-CN"},
+    )
+
+    assert response.status_code == 503
+    payload = response.json()
+    task_id = payload["error"]["details"]["task_id"]
+    task_row = _fetch_task_db_row(tmp_path, task_id)
+
+    assert payload["error"]["code"] == "analyzer_unavailable"
+    assert task_row is not None
+    assert task_row["status"] == "analyze_failed"
+    assert task_row["error_code"] == "analyzer_unavailable"
+
+
+def test_create_task_remote_mode_marks_analyze_failed_when_analyzer_response_is_invalid(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("ANALYZER_MODE", "remote")
+    monkeypatch.setenv("ANALYZER_BASE_URL", "http://127.0.0.1:8090")
+
+    def fake_send_request(self, request):  # noqa: ANN001, ARG001
+        raise LogAnalyzerError(
+            code="analyzer_invalid_response",
+            message="Analyzer response did not match the expected contract.",
+            details={"analyzer_base_url": "http://127.0.0.1:8090"},
+        )
+
+    monkeypatch.setattr(RemoteLogAnalyzer, "_send_request", fake_send_request)
+
+    response = client.post(
+        "/api/tasks",
+        files={"file": ("host-a-logs.zip", _build_zip_bytes({"logs/system.log": "system ok\n"}), "application/zip")},
+        data={"parser_profile": "default", "report_lang": "zh-CN"},
+    )
+
+    assert response.status_code == 503
+    payload = response.json()
+    task_id = payload["error"]["details"]["task_id"]
+    task_row = _fetch_task_db_row(tmp_path, task_id)
+
+    assert payload["error"]["code"] == "analyzer_invalid_response"
+    assert task_row is not None
+    assert task_row["status"] == "analyze_failed"
+    assert task_row["error_code"] == "analyzer_invalid_response"
 
 
 def test_create_task_rejects_non_zip_file(tmp_path: Path, monkeypatch) -> None:

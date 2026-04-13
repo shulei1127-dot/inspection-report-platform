@@ -96,6 +96,56 @@ The repository now also includes a minimal future-service scaffold in:
 
 - `log-analyzer-service/`
 
+## Remote Analyzer Integration
+
+The platform can now run against the standalone analyzer service in remote mode.
+
+1. Start `log-analyzer-service`:
+
+```bash
+cd log-analyzer-service
+../.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8090
+```
+
+2. Start the platform in remote analyzer mode:
+
+```bash
+ANALYZER_MODE=remote \
+ANALYZER_BASE_URL=http://127.0.0.1:8090 \
+ANALYZER_TIMEOUT_SECONDS=30 \
+REPORT_RENDERING_ENABLED=false \
+.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8013
+```
+
+3. Verify both health endpoints:
+
+```bash
+curl -s http://127.0.0.1:8090/health
+curl -s http://127.0.0.1:8013/health
+```
+
+4. Upload an input bundle v1 archive through the platform:
+
+```bash
+curl -X POST http://127.0.0.1:8013/api/tasks \
+  -F file=@spec-v1.zip \
+  -F parser_profile=default \
+  -F report_lang=zh-CN
+```
+
+Expected remote-flow result:
+
+- analyzer receives `POST /analyze`
+- platform persists `workdir/{task_id}/unified.json`
+- platform persists `workdir/{task_id}/report_payload.json`
+- task status becomes `completed` or `rendered`
+
+If Carbone is available, the rendered report flow remains unchanged:
+
+```bash
+curl -X POST http://127.0.0.1:8013/api/tasks/<task_id>/render-report
+```
+
 Supported upload archive formats:
 
 - `.zip`
