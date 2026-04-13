@@ -92,6 +92,10 @@ The standalone analyzer-service API boundary is documented in:
 
 - `docs/log_analyzer_api_v1.md`
 
+The repository now also includes a minimal future-service scaffold in:
+
+- `log-analyzer-service/`
+
 Supported upload archive formats:
 
 - `.zip`

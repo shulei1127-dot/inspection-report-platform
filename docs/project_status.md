@@ -87,6 +87,7 @@ Log Analyzer Abstraction v1 MVP
 - updated upload-flow persistence so analysis failures and render failures are now stored with explicit task statuses
 - added first-batch analyzer contract tests covering local analyzer responses, remote analyzer contract validation, and analyzer failure integration
 - added `docs/log_analyzer_api_v1.md` to define the formal analyzer-service boundary, request/response envelopes, version fields, directory source contract, error handling expectations, and v1 non-goals
+- added a minimal `log-analyzer-service/` scaffold with app/api/core/schemas/services/parsers layout, health endpoint, placeholder analyze route, config module, and implementation notes for the next standalone-service phase
 
 ## Pending
 
@@ -100,6 +101,7 @@ Log Analyzer Abstraction v1 MVP
 - richer persistence layer behavior beyond a single SQLite table
 - external standalone analyzer service implementation
 - standalone analyzer service implementation behind the new documented API boundary
+- real analyzer service tests and parser migration inside the standalone scaffold
 
 ## Notes
 
@@ -121,3 +123,4 @@ Log Analyzer Abstraction v1 MVP
 - Upload support now covers `.zip`, `.tar.gz`, and `.tgz`, while the extracted input layout remains the same canonical v1 structure.
 - The platform now supports a local-vs-remote analyzer seam, but only the local implementation is used in production flow until a separate analyzer service is introduced.
 - Analyzer request modeling already uses a `source` object with directory mode so the future service boundary can expand without breaking the contract shape.
+- The new `log-analyzer-service/` subtree is intentionally only a scaffold and should not be mistaken for a finished standalone service implementation.
