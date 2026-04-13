@@ -1,0 +1,10 @@
+# time: 2026-04-13 12:30:40 +0000
+# cmd: timedatectl
+
+               Local time: Mon 2026-04-13 12:30:40 UTC
+           Universal time: Mon 2026-04-13 12:30:40 UTC
+                 RTC time: Mon 2026-04-13 12:30:39
+                Time zone: Etc/UTC (UTC, +0000)
+System clock synchronized: no
+              NTP service: active
+          RTC in local TZ: no

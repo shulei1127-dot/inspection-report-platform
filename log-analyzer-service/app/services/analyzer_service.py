@@ -6,6 +6,7 @@ from pathlib import Path
 
 from app.core.config import get_settings
 from app.parsers.linux_default_parser import LinuxDefaultParser
+from app.parsers.xray_collector_parser import XrayCollectorParser
 from app.schemas.analyze import (
     AnalyzeInputSummary,
     AnalyzeRequestV1,
@@ -40,7 +41,7 @@ class AnalyzerService:
 
         try:
             file_count, directory_count = _scan_analysis_root(analysis_root)
-            unified_json = LinuxDefaultParser().parse(
+            unified_json = self._parse_analysis_root(
                 task_id=request.task_id,
                 analysis_root=analysis_root,
                 archive_name=request.archive_name,
@@ -116,6 +117,30 @@ class AnalyzerService:
             )
 
         return analysis_root.resolve()
+
+    def _parse_analysis_root(
+        self,
+        *,
+        task_id: str,
+        analysis_root: Path,
+        archive_name: str | None,
+        archive_size_bytes: int | None,
+    ):
+        xray_parser = XrayCollectorParser()
+        if xray_parser.detect(analysis_root) is not None:
+            return xray_parser.parse(
+                task_id=task_id,
+                analysis_root=analysis_root,
+                archive_name=archive_name,
+                archive_size_bytes=archive_size_bytes,
+            )
+
+        return LinuxDefaultParser().parse(
+            task_id=task_id,
+            analysis_root=analysis_root,
+            archive_name=archive_name,
+            archive_size_bytes=archive_size_bytes,
+        )
 
 
 def build_analyzer_service() -> AnalyzerService:

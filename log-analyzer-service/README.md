@@ -38,6 +38,7 @@ Current implemented parser coverage:
 - `system_info`
 - `systemctl_status`
 - `docker_ps`
+- `xray-collector v1` normalization into the canonical parser inputs
 
 Still intentionally out of scope:
 
@@ -45,6 +46,26 @@ Still intentionally out of scope:
 - asynchronous jobs
 - persistence
 - parser expansion beyond the current migrated coverage
+
+## Xray Collector v1
+
+The analyzer now includes a minimal `xray-collector` adapter that recognizes one real
+collector family and normalizes it into the canonical parser inputs before calling the
+existing Linux parser.
+
+Current v1 support is intentionally narrow and documented in:
+
+- [docs/xray_collector_input_spec_v1.md](../docs/xray_collector_input_spec_v1.md)
+
+Supported xray inputs currently focus on:
+
+- `system-logs/hostnamectl.txt`
+- `system-logs/timedatectl.txt`
+- `system-logs/uname.txt`
+- `system-logs/uptime.txt`
+- `system-logs/systemctl-failed.txt`
+- `resource-snapshots/docker-ps-a.txt`
+- fallback `xray-logs/container-logs/docker_ps.log`
 
 ## Recommended Structure
 

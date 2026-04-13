@@ -1,0 +1,6 @@
+# time: 2026-04-13 12:30:45 +0000
+# cmd: ip addr
+
+2: ens160: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500
+    inet 10.10.20.30/24 brd 10.10.20.255 scope global dynamic ens160
+    inet6 fe80::20c:29ff:fe12:3456/64 scope link

@@ -95,6 +95,10 @@ Log Analyzer Abstraction v1 MVP
 - added a repeatable `scripts/verify_remote_analyzer_failure_modes.sh` smoke script covering analyzer network failures, structured analyzer errors, and non-JSON 500 responses
 - added a minimal GitHub Actions draft at `.github/workflows/remote-analyzer-smoke.yml` covering root tests, analyzer tests, remote analyzer success smoke, and remote analyzer failure smoke
 - added `docs/ci_smoke_lane.md` to document CI job roles, startup order, and the current optional status of Carbone verification
+- added `docs/xray_collector_input_spec_v1.md` to formalize the first supported `xray-collector` input family for analyzer-side normalization
+- added a minimal analyzer-side `xray-collector v1` adapter that recognizes one real collector layout and normalizes it into canonical `system_info`, `systemctl_status`, and `docker_ps` inputs
+- reused the existing Linux parser after normalization so `host_info`, `services`, `containers`, `issues`, and `summary` continue to flow through the existing `unified-json/v1` path
+- added a fixed `xray-collector` fixture and analyzer tests validating recognition, canonical normalization, and valid `unified-json/v1` output
 
 ## Pending
 
@@ -110,8 +114,7 @@ Log Analyzer Abstraction v1 MVP
 - standalone analyzer service implementation behind the new documented API boundary
 - richer analyzer coverage beyond the current migrated parser set
 - archive-upload mode for analyzer service
-- scripted remote analyzer verification in CI or a dedicated smoke-test lane
-- scripted remote analyzer failure verification in CI or a dedicated smoke-test lane
+- richer xray-collector coverage beyond the current minimal v1 file set
 
 ## Notes
 
@@ -134,6 +137,7 @@ Log Analyzer Abstraction v1 MVP
 - The platform now supports a local-vs-remote analyzer seam, but only the local implementation is used in production flow until a separate analyzer service is introduced.
 - Analyzer request modeling already uses a `source` object with directory mode so the future service boundary can expand without breaking the contract shape.
 - The new `log-analyzer-service/` subtree is intentionally only a scaffold and should not be mistaken for a finished standalone service implementation.
-- Remote analyzer verification is now scriptable for local regression and demo use, but it is not yet wired into CI.
+- Remote analyzer verification is now scriptable for local regression and demo use and is also represented by a minimal CI smoke lane draft.
 - Platform task records now retain analyzer error details as JSON text for better failure diagnosis, but this is still a minimal persistence shape rather than a richer structured error model.
 - Remote analyzer failure regression is now scriptable without mutating the real analyzer service because the smoke script uses a temporary mock analyzer process.
+- The first `xray-collector` support is intentionally adapter-based rather than a generic multi-collector framework so the analyzer can absorb one real business input without broad parser refactoring.

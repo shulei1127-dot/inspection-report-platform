@@ -1,0 +1,12 @@
+# time: 2026-04-13 12:30:39 +0000
+# cmd: hostnamectl
+
+   Static hostname: 24waf
+         Icon name: computer-vm
+           Chassis: vm
+        Machine ID: c94389070585403f880e92f5bfe976ba
+           Boot ID: d7e9caddd0034217a5850de5d5ca34ad
+    Virtualization: vmware
+  Operating System: Ubuntu 20.04.6 LTS
+            Kernel: Linux 5.4.0-208-generic
+      Architecture: x86-64

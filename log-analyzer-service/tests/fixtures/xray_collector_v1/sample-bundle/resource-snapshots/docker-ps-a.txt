@@ -1,0 +1,7 @@
+# time: 2026-04-13 12:32:12 +0000
+# cmd: docker ps -a
+
+CONTAINER ID   IMAGE            COMMAND                  CREATED        STATUS                  PORTS                                 NAMES
+b167b8f0ef8d   nginx:1.27       "/docker-entrypoint"     3 months ago   Up 3 months (healthy)   0.0.0.0:443->8443/tcp                 xray-nginx
+372167c1fb44   base:latest      "bash"                   3 months ago   Created                                                       xray-gunkit-base
+34415279e651   app:latest       "./entrypoint.sh"        3 months ago   Exited (1) 2 hours ago  0.0.0.0:12345-12346->12345-12346/tcp  xray-upgrader

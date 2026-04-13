@@ -91,10 +91,15 @@ Current modes:
 The standalone analyzer-service API boundary is documented in:
 
 - `docs/log_analyzer_api_v1.md`
+- `docs/xray_collector_input_spec_v1.md`
 
 The repository now also includes a minimal future-service scaffold in:
 
 - `log-analyzer-service/`
+
+The analyzer side now also includes a minimal `xray-collector v1` adapter that can
+recognize one real collector layout and normalize it into the existing canonical
+inputs before producing `unified-json/v1`.
 
 ## Remote Analyzer Integration
 

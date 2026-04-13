@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,9 @@ from app.parsers import linux_default_parser
 
 
 client = TestClient(app)
+XRAY_FIXTURE_DIR = (
+    Path(__file__).parent / "fixtures" / "xray_collector_v1" / "sample-bundle"
+)
 
 
 def test_get_health_returns_status_service_and_version() -> None:
@@ -52,6 +56,45 @@ def test_post_analyze_happy_path_returns_versioned_response(tmp_path: Path) -> N
     assert validated.input_summary.path == tmp_path.resolve().as_posix()
     assert validated.input_summary.file_count == 3
     assert validated.input_summary.directory_count == 2
+
+
+def test_post_analyze_recognizes_xray_collector_input(tmp_path: Path) -> None:
+    xray_root = tmp_path / "xray-collector.20260413123039"
+    shutil.copytree(XRAY_FIXTURE_DIR, xray_root)
+
+    response = client.post(
+        "/analyze",
+        json={
+            "request_version": "analyze-request/v1",
+            "task_id": "tsk_analyzer_xray_001",
+            "source": {
+                "type": "directory",
+                "path": tmp_path.as_posix(),
+            },
+            "archive_name": "xray-collector.20260413123039.tar.gz",
+            "archive_size_bytes": 4096,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    validated = AnalyzeResponseV1.model_validate(payload)
+
+    assert validated.result.task_id == "tsk_analyzer_xray_001"
+    assert validated.result.parser is not None
+    assert validated.result.parser.name == "xray-collector-parser"
+    assert validated.result.host_info.hostname == "24waf"
+    assert validated.result.host_info.ip == "10.10.20.30"
+    assert validated.result.host_info.timezone == "Etc/UTC"
+    assert validated.result.summary.overall_status == "warning"
+    assert validated.result.summary.service_count == 1
+    assert validated.result.summary.container_count == 2
+    assert validated.result.summary.issue_count == 3
+    assert validated.result.services[0].name == "fwupd-refresh"
+    assert validated.result.containers[0].name == "xray-nginx"
+    assert any(container.name == "xray-upgrader" for container in validated.result.containers)
+    assert validated.result.metadata["collector_type"] == "xray-collector/v1"
+    assert any("xray-collector v1 input detected" in warning for warning in validated.warnings)
 
 
 def test_post_analyze_rejects_unsupported_source_type(tmp_path: Path) -> None:
