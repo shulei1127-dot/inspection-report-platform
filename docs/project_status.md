@@ -86,6 +86,7 @@ Log Analyzer Abstraction v1 MVP
 - refined task lifecycle statuses to distinguish `analyzing`, `analyze_failed`, `completed`, `render_failed`, and `rendered`
 - updated upload-flow persistence so analysis failures and render failures are now stored with explicit task statuses
 - added first-batch analyzer contract tests covering local analyzer responses, remote analyzer contract validation, and analyzer failure integration
+- added `docs/log_analyzer_api_v1.md` to define the formal analyzer-service boundary, request/response envelopes, version fields, directory source contract, error handling expectations, and v1 non-goals
 
 ## Pending
 
@@ -98,7 +99,7 @@ Log Analyzer Abstraction v1 MVP
 - frontend
 - richer persistence layer behavior beyond a single SQLite table
 - external standalone analyzer service implementation
-- dedicated analyzer API documentation under `docs/log_analyzer_api_v1.md`
+- standalone analyzer service implementation behind the new documented API boundary
 
 ## Notes
 

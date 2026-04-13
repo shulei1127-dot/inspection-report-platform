@@ -88,6 +88,10 @@ Current modes:
 - `local`: use the in-process analyzer implementation that wraps the existing parser
 - `remote`: call a future external analyzer service over HTTP
 
+The standalone analyzer-service API boundary is documented in:
+
+- `docs/log_analyzer_api_v1.md`
+
 Supported upload archive formats:
 
 - `.zip`
