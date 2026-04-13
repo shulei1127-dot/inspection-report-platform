@@ -73,7 +73,10 @@ def test_default_template_exists_and_is_valid_docx() -> None:
 
 def test_render_service_detects_existing_template_before_adapter_failure(
     tmp_path: Path,
+    monkeypatch,
 ) -> None:
+    monkeypatch.setenv("CARBONE_BASE_URL", "http://127.0.0.1:4999")
+    monkeypatch.setenv("CARBONE_API_TIMEOUT_SECONDS", "1")
     report_payload_path = _write_report_payload(tmp_path / "report_payload.json")
     template_path = get_settings().default_report_template_path
 

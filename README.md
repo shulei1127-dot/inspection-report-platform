@@ -60,6 +60,12 @@ Expected response:
 {"status":"ok","service":"inspection-report-platform"}
 ```
 
+The running service also exposes a minimal homepage:
+
+```bash
+http://127.0.0.1:8000/
+```
+
 Minimal local persistence now uses SQLite through Python's standard library:
 
 ```bash

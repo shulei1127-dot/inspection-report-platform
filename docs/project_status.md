@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Minimal Retention And Batch Cleanup v1 MVP
+Minimal Homepage v1 MVP
 
 ## Completed In This Iteration
 
@@ -76,6 +76,8 @@ Minimal Retention And Batch Cleanup v1 MVP
 - added minimal retention filters `keep_latest` and `older_than_days`
 - kept batch cleanup limited to safe task statuses `rendered`, `completed`, and `failed`, while always skipping `processing`
 - kept batch cleanup aligned with exact-path single-task deletion so archive, workdir, outputs, and matching database records are removed together
+- added a minimal homepage at `/` so the running MVP no longer returns `404` at the root URL
+- kept the homepage intentionally static and lightweight, with links to `/docs`, `/health`, `/api/tasks`, and `/openapi.json`
 
 ## Pending
 
@@ -104,3 +106,4 @@ Minimal Retention And Batch Cleanup v1 MVP
 - Input support is now documented and stabilized for v1, but parser coverage is still intentionally narrow and only covers the currently documented files.
 - Task history is now visible through `GET /api/tasks`, but the list is still intentionally minimal and has no pagination, filtering, or search yet.
 - Task cleanup now supports manual batch retention filters, but there is still no scheduled cleanup, soft delete, or restore mechanism.
+- The homepage is now available for a friendlier entry point, but it is intentionally only a small informational landing page rather than a real frontend.
