@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Tar Gz Upload Support v1 MVP
+Log Analyzer Abstraction v1 MVP
 
 ## Completed In This Iteration
 
@@ -74,12 +74,18 @@ Tar Gz Upload Support v1 MVP
 - updated task deletion so filesystem cleanup also removes the matching database record
 - added `POST /api/tasks/cleanup` for manual batch cleanup without introducing a scheduler or background worker
 - added minimal retention filters `keep_latest` and `older_than_days`
-- kept batch cleanup limited to safe task statuses `rendered`, `completed`, and `failed`, while always skipping `processing`
+- kept batch cleanup limited to safe task statuses and always skipping in-flight analysis work
 - kept batch cleanup aligned with exact-path single-task deletion so archive, workdir, outputs, and matching database records are removed together
 - extended `POST /api/tasks` to accept `.tar.gz` and `.tgz` in addition to `.zip`
 - added safe tar archive validation and extraction without changing the existing upload endpoint shape
 - added a minimal homepage at `/` so the running MVP no longer returns `404` at the root URL
 - kept the homepage intentionally static and lightweight, with links to `/docs`, `/health`, `/api/tasks`, and `/openapi.json`
+- added an internal `LogAnalyzer` abstraction so task orchestration no longer depends directly on parser implementation details
+- added `LocalLogAnalyzer` for in-process parsing and `RemoteLogAnalyzer` for future HTTP-based analyzer-service integration
+- added versioned analyzer request and response contract models for platform-side integration and contract testing
+- refined task lifecycle statuses to distinguish `analyzing`, `analyze_failed`, `completed`, `render_failed`, and `rendered`
+- updated upload-flow persistence so analysis failures and render failures are now stored with explicit task statuses
+- added first-batch analyzer contract tests covering local analyzer responses, remote analyzer contract validation, and analyzer failure integration
 
 ## Pending
 
@@ -91,6 +97,8 @@ Tar Gz Upload Support v1 MVP
 - AI analysis workflow
 - frontend
 - richer persistence layer behavior beyond a single SQLite table
+- external standalone analyzer service implementation
+- dedicated analyzer API documentation under `docs/log_analyzer_api_v1.md`
 
 ## Notes
 
@@ -110,3 +118,5 @@ Tar Gz Upload Support v1 MVP
 - Task cleanup now supports manual batch retention filters, but there is still no scheduled cleanup, soft delete, or restore mechanism.
 - The homepage is now available for a friendlier entry point, but it is intentionally only a small informational landing page rather than a real frontend.
 - Upload support now covers `.zip`, `.tar.gz`, and `.tgz`, while the extracted input layout remains the same canonical v1 structure.
+- The platform now supports a local-vs-remote analyzer seam, but only the local implementation is used in production flow until a separate analyzer service is introduced.
+- Analyzer request modeling already uses a `source` object with directory mode so the future service boundary can expand without breaking the contract shape.

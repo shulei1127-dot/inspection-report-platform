@@ -1,6 +1,17 @@
-from typing import Literal
+from typing import Literal, TypeAlias
 
 from pydantic import BaseModel, Field, model_validator
+
+
+TaskStatus: TypeAlias = Literal[
+    "analyzing",
+    "analyze_failed",
+    "completed",
+    "render_failed",
+    "rendered",
+    "processing",
+    "failed",
+]
 
 
 class TaskCreateOptions(BaseModel):
@@ -27,7 +38,7 @@ class TaskSummary(BaseModel):
 
 class TaskCreateData(BaseModel):
     task_id: str
-    status: Literal["completed", "failed", "rendered"]
+    status: Literal["completed", "render_failed", "rendered"]
     contract_version: str = "task-response/v1"
     filename: str
     parser_profile: str
@@ -47,7 +58,7 @@ class TaskCreateSuccessResponse(BaseModel):
 
 class TaskResultData(BaseModel):
     task_id: str
-    status: Literal["processing", "completed", "rendered", "failed"]
+    status: TaskStatus
     contract_version: str = "task-response/v1"
     created_at: str | None = None
     unified_json_path: str | None = None

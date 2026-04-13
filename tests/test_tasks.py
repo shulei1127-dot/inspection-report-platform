@@ -11,6 +11,8 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.schemas.report_payload import ReportPayloadV1
 from app.schemas.unified_json import UnifiedJsonV1
+from app.services.log_analyzer import LogAnalyzerError
+from app.services.report_rendering_service import ReportRenderResult
 from app.services import task_service
 
 
@@ -208,7 +210,7 @@ def test_get_task_prefers_database_record_when_available(
     _write_task_db_row(
         tmp_path,
         task_id=task_id,
-        status="failed",
+        status="analyze_failed",
         created_at="2026-04-12T08:08:08Z",
         updated_at="2026-04-12T08:09:09Z",
         archive_path=f"uploads/{task_id}.zip",
@@ -225,7 +227,7 @@ def test_get_task_prefers_database_record_when_available(
     assert response.status_code == 200
     payload = response.json()
     assert payload["data"]["task_id"] == task_id
-    assert payload["data"]["status"] == "failed"
+    assert payload["data"]["status"] == "analyze_failed"
     assert payload["data"]["created_at"] == "2026-04-12T08:08:08Z"
     assert payload["data"]["summary"] == {
         "service_count": 1,
@@ -427,7 +429,7 @@ def test_cleanup_tasks_keep_latest_removes_older_safe_tasks(
     assert not (tmp_path / "outputs" / "tsk_20260413_020202_middle02").exists()
 
 
-def test_cleanup_tasks_older_than_days_skips_processing_and_recent_tasks(
+def test_cleanup_tasks_older_than_days_skips_analyzing_and_recent_tasks(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -465,7 +467,7 @@ def test_cleanup_tasks_older_than_days_skips_processing_and_recent_tasks(
     _write_task_db_row(
         tmp_path,
         task_id="tsk_20260410_020202_oldproc02",
-        status="processing",
+        status="analyzing",
         created_at="2026-04-10T02:02:02Z",
         updated_at="2026-04-10T02:02:02Z",
         archive_path="uploads/tsk_20260410_020202_oldproc02.zip",
@@ -744,6 +746,90 @@ def test_create_task_uploads_extracts_zip_and_writes_contract_artifacts(
     ]
     assert report_payload.appendix["parser_name"] == "default-linux-parser"
     assert report_payload.appendix["extracted_file_count"] == 2
+
+
+def test_create_task_marks_analyze_failed_when_analyzer_abstraction_errors(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    class FailingAnalyzer:
+        def analyze(self, request):  # noqa: ANN001
+            raise LogAnalyzerError(
+                code="analyzer_timeout",
+                message="Analyzer request timed out.",
+                details={"analyzer_base_url": "http://127.0.0.1:8090"},
+            )
+
+    monkeypatch.setattr(task_service, "build_log_analyzer", lambda: FailingAnalyzer())
+
+    response = client.post(
+        "/api/tasks",
+        files={"file": ("host-a-logs.zip", _build_zip_bytes({"logs/system.log": "system ok\n"}), "application/zip")},
+        data={"parser_profile": "default", "report_lang": "zh-CN"},
+    )
+
+    assert response.status_code == 503
+    payload = response.json()
+    task_id = payload["error"]["details"]["task_id"]
+    task_row = _fetch_task_db_row(tmp_path, task_id)
+
+    assert payload == {
+        "success": False,
+        "error": {
+            "code": "analyzer_timeout",
+            "message": "Analyzer request timed out.",
+            "details": {
+                "analyzer_base_url": "http://127.0.0.1:8090",
+                "task_id": task_id,
+            },
+        },
+    }
+    assert task_row is not None
+    assert task_row["status"] == "analyze_failed"
+    assert task_row["unified_json_path"] is None
+    assert task_row["report_payload_path"] is None
+    assert (tmp_path / "uploads" / f"{task_id}.zip").exists()
+    assert (tmp_path / "workdir" / task_id / "logs" / "system.log").exists()
+
+
+def test_create_task_returns_render_failed_when_optional_render_attempt_fails(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("REPORT_RENDERING_ENABLED", "true")
+
+    monkeypatch.setattr(
+        task_service,
+        "maybe_render_report_from_payload_file",
+        lambda task_id, report_payload_path: ReportRenderResult(
+            attempted=True,
+            success=False,
+            error_code="carbone_unreachable",
+            error_message="Failed to reach the Carbone runtime.",
+            renderer="HttpCarboneAdapter",
+        ),
+    )
+
+    response = client.post(
+        "/api/tasks",
+        files={"file": ("host-a-logs.zip", _build_zip_bytes({"logs/system.log": "system ok\n"}), "application/zip")},
+        data={"parser_profile": "default", "report_lang": "zh-CN"},
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    task_id = payload["data"]["task_id"]
+    task_row = _fetch_task_db_row(tmp_path, task_id)
+
+    assert payload["data"]["status"] == "render_failed"
+    assert payload["data"]["report_file_path"] is None
+    assert task_row is not None
+    assert task_row["status"] == "render_failed"
+    assert task_row["error_code"] == "carbone_unreachable"
+    assert task_row["report_payload_path"] == f"workdir/{task_id}/report_payload.json"
 
 
 def test_create_task_rejects_non_zip_file(tmp_path: Path, monkeypatch) -> None:

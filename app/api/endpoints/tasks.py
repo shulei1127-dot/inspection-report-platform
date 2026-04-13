@@ -39,6 +39,7 @@ router = APIRouter()
     responses={
         400: {"model": TaskErrorResponse},
         415: {"model": TaskErrorResponse},
+        503: {"model": TaskErrorResponse},
         500: {"model": TaskErrorResponse},
     },
 )

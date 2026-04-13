@@ -158,6 +158,10 @@ def test_render_report_endpoint_returns_structured_error_when_carbone_is_unreach
     assert payload["success"] is False
     assert payload["error"]["code"] == "carbone_unreachable"
 
+    task_response = client.get(f"/api/tasks/{task_id}")
+    assert task_response.status_code == 200
+    assert task_response.json()["data"]["status"] == "render_failed"
+
 
 def _write_report_payload(target_path: Path) -> Path:
     report_payload = ReportPayloadV1(

@@ -22,7 +22,9 @@ from app.schemas.tasks import (
     TaskResultData,
     TaskSummary,
 )
-from app.services.parser_stub import build_unified_json, persist_unified_json
+from app.schemas.log_analyzer import AnalyzeDirectorySource, AnalyzeRequestV1
+from app.services.log_analyzer import LogAnalyzerError, build_log_analyzer
+from app.services.parser_stub import persist_unified_json
 from app.services.report_payload_mapper import (
     map_unified_json_to_report_payload,
     persist_report_payload,
@@ -128,7 +130,7 @@ def create_task_from_upload(upload: UploadFile | None, options: TaskCreateOption
     task_workdir.mkdir(parents=True, exist_ok=True)
     create_task_record(
         task_id=task_id,
-        status="processing",
+        status="analyzing",
         archive_path=archive_path.as_posix(),
         workdir_path=task_workdir.as_posix(),
     )
@@ -137,12 +139,14 @@ def create_task_from_upload(upload: UploadFile | None, options: TaskCreateOption
         _save_upload(upload, archive_path)
         _validate_archive_file(archive_path, filename, archive_suffix=archive_suffix)
         _extract_archive(archive_path, task_workdir, filename, archive_suffix=archive_suffix)
-        unified_json = build_unified_json(
-            task_id,
-            task_workdir,
+        analyze_request = AnalyzeRequestV1(
+            task_id=task_id,
+            source=AnalyzeDirectorySource(path=task_workdir.resolve().as_posix()),
             archive_name=filename,
             archive_size_bytes=archive_path.stat().st_size,
         )
+        analyze_response = build_log_analyzer().analyze(analyze_request)
+        unified_json = analyze_response.result
         persist_unified_json(unified_json, unified_json_path)
         update_task_record(
             task_id,
@@ -168,26 +172,44 @@ def create_task_from_upload(upload: UploadFile | None, options: TaskCreateOption
             task_id,
             report_payload_path,
         )
+        result_status = "completed"
         if render_result.success and render_result.output_path is not None:
             report_file_path = render_result.output_path.as_posix()
+            result_status = "rendered"
+        elif render_result.attempted:
+            result_status = "render_failed"
         _record_render_result(task_id, render_result)
+    except LogAnalyzerError as exc:
+        update_task_record(
+            task_id,
+            status="analyze_failed",
+            error_code=exc.code,
+            error_message=exc.message,
+        )
+        raise TaskUploadError(
+            status_code=503,
+            code=exc.code,
+            message=exc.message,
+            details={**exc.details, "task_id": task_id},
+        ) from exc
     except TaskUploadError as exc:
         _cleanup_failed_task(archive_path, task_workdir)
         update_task_record(
             task_id,
-            status="failed",
+            status="analyze_failed",
             unified_json_path=None,
             report_payload_path=None,
             report_file_path=None,
             error_code=exc.code,
             error_message=exc.message,
         )
+        exc.details.setdefault("task_id", task_id)
         raise
     except OSError as exc:
         _cleanup_failed_task(archive_path, task_workdir)
         update_task_record(
             task_id,
-            status="failed",
+            status="analyze_failed",
             unified_json_path=None,
             report_payload_path=None,
             report_file_path=None,
@@ -198,12 +220,12 @@ def create_task_from_upload(upload: UploadFile | None, options: TaskCreateOption
             status_code=500,
             code="internal_error",
             message="Failed to persist the uploaded task files.",
-            details={"filename": filename, "reason": str(exc)},
+            details={"filename": filename, "reason": str(exc), "task_id": task_id},
         ) from exc
 
     return TaskCreateData(
         task_id=task_id,
-        status="rendered" if report_file_path is not None else "completed",
+        status=result_status,
         filename=filename,
         parser_profile=options.parser_profile,
         report_lang=options.report_lang,
@@ -338,7 +360,7 @@ def cleanup_tasks(options: TaskCleanupOptions) -> TaskCleanupData:
     safe_task_results = [
         task_result
         for task_result in task_results
-        if task_result.status in {"rendered", "completed", "failed"}
+        if task_result.status in {"rendered", "completed", "render_failed", "analyze_failed", "failed"}
     ]
 
     kept_task_ids: set[str] = set()
@@ -351,7 +373,7 @@ def cleanup_tasks(options: TaskCleanupOptions) -> TaskCleanupData:
     deleted_task_ids: list[str] = []
 
     for task_result in task_results:
-        if task_result.status not in {"rendered", "completed", "failed"}:
+        if task_result.status not in {"rendered", "completed", "render_failed", "analyze_failed", "failed"}:
             continue
 
         if task_result.task_id in kept_task_ids:
@@ -581,7 +603,7 @@ def _derive_task_status(
         return "rendered"
     if unified_json_path.exists() and report_payload_path.exists():
         return "completed"
-    return "processing"
+    return "analyzing"
 
 
 def _derive_task_created_at(task_id: str, *, artifact_paths: dict[str, Path]) -> str | None:
@@ -688,7 +710,7 @@ def _record_render_result(task_id: str, render_result: ReportRenderResult) -> No
     if render_result.attempted:
         update_task_record(
             task_id,
-            status="completed",
+            status="render_failed",
             error_code=render_result.error_code,
             error_message=render_result.error_message,
         )
