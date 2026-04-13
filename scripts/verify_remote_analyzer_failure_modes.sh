@@ -193,6 +193,30 @@ PY
   fi
 }
 
+start_broken_analyzer_socket() {
+  local analyzer_port="$1"
+
+  stop_analyzer_mock
+  (
+    MOCK_PORT="${analyzer_port}" python3 - <<'PY'
+import os
+import socket
+
+port = int(os.environ["MOCK_PORT"])
+
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind(("127.0.0.1", port))
+    server.listen()
+    while True:
+        conn, _addr = server.accept()
+        conn.close()
+PY
+  ) >"${TMP_DIR}/mock-analyzer-broken-socket.log" 2>&1 &
+  ANALYZER_SESSION_PID="$!"
+  sleep 1
+}
+
 build_sample_zip() {
   python3 - <<'PY' "${ROOT_DIR}" "${TMP_DIR}"
 import sys
@@ -294,36 +318,92 @@ print(payload["error"]["details"]["task_id"])
 PY
 }
 
+verify_network_failure_response() {
+  local response_json="$1"
+  local expected_status_code="$2"
+  local analyzer_base_url="$3"
+
+  python3 - <<'PY' "${response_json}" "${expected_status_code}" "${analyzer_base_url}"
+import json
+import sys
+
+raw = sys.argv[1]
+expected_status_code = sys.argv[2]
+analyzer_base_url = sys.argv[3]
+
+payload_text, status_code = raw.rsplit("\n", 1)
+payload = json.loads(payload_text)
+
+assert status_code == expected_status_code, status_code
+assert payload["success"] is False
+assert payload["error"]["code"] in {
+    "analyzer_unavailable",
+    "analyzer_timeout",
+    "analyzer_request_failed",
+}, payload["error"]["code"]
+assert analyzer_base_url in json.dumps(payload["error"]["details"], ensure_ascii=False)
+
+print(payload["error"]["details"]["task_id"])
+print(payload["error"]["code"])
+print(payload["error"]["message"])
+PY
+}
+
+verify_task_network_failure_state() {
+  local app_port="$1"
+  local task_id="$2"
+  local analyzer_base_url="$3"
+
+  local task_response
+  task_response="$(curl -fsS "http://${APP_HOST}:${app_port}/api/tasks/${task_id}")"
+
+  python3 - <<'PY' "${task_response}" "${analyzer_base_url}"
+import json
+import sys
+
+payload = json.loads(sys.argv[1])
+analyzer_base_url = sys.argv[2]
+
+data = payload["data"]
+assert data["status"] == "analyze_failed", data["status"]
+assert data["error"]["code"] in {
+    "analyzer_unavailable",
+    "analyzer_timeout",
+    "analyzer_request_failed",
+}, data["error"]["code"]
+assert analyzer_base_url in json.dumps(data["error"]["details"], ensure_ascii=False)
+print(data["error"]["code"])
+PY
+}
+
 run_unreachable_case() {
   local app_port
   local analyzer_port
   app_port="$(pick_free_port)"
   analyzer_port="$(pick_free_port)"
 
-  step "Scenario: analyzer unavailable / timeout"
-  stop_analyzer_mock
+  step "Scenario: analyzer unavailable"
+  start_broken_analyzer_socket "${analyzer_port}"
   start_platform "http://${ANALYZER_HOST}:${analyzer_port}" "${app_port}"
 
   local response_json
   response_json="$(run_upload "${app_port}" "${SAMPLE_ZIP}")"
-  local task_id
-  task_id="$(verify_failure_response \
+  local verification_output
+  verification_output="$(verify_network_failure_response \
     "${response_json}" \
     "503" \
-    "analyzer_timeout" \
-    "Analyzer request timed out." \
-    "analyzer_base_url" \
     "http://${ANALYZER_HOST}:${analyzer_port}")"
-  pass "Platform returned stable analyzer timeout response for unreachable analyzer"
+  local task_id
+  task_id="$(printf '%s\n' "${verification_output}" | sed -n '1p')"
+  local actual_code
+  actual_code="$(printf '%s\n' "${verification_output}" | sed -n '2p')"
+  pass "Platform returned stable network-failure response (${actual_code})"
 
-  verify_task_failure_state \
+  actual_code="$(verify_task_network_failure_state \
     "${app_port}" \
     "${task_id}" \
-    "analyzer_timeout" \
-    "Analyzer request timed out." \
-    "analyzer_base_url" \
-    "http://${ANALYZER_HOST}:${analyzer_port}" >/dev/null
-  pass "Task detail retained analyze_failed and analyzer_timeout"
+    "http://${ANALYZER_HOST}:${analyzer_port}")"
+  pass "Task detail retained analyze_failed and network-failure code (${actual_code})"
 }
 
 run_structured_case() {
@@ -416,7 +496,7 @@ run_non_json_500_case
 
 step "Remote analyzer failure verification completed"
 echo "Scenarios verified:"
-echo "- analyzer unavailable / timeout"
+echo "- analyzer network failure path"
 echo "- structured analyzer error: unsupported_source_type"
 echo "- structured analyzer error: source_not_found"
 echo "- non-JSON analyzer 500"

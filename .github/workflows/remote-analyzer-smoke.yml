@@ -1,0 +1,99 @@
+name: Remote Analyzer Smoke
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install root dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/pip install -r requirements.txt
+
+      - name: Install analyzer subtree dependencies
+        run: |
+          .venv/bin/pip install -r log-analyzer-service/requirements.txt
+
+      - name: Run platform tests
+        run: |
+          .venv/bin/pytest
+
+      - name: Run analyzer tests
+        run: |
+          cd log-analyzer-service
+          ../.venv/bin/pytest
+
+  remote-analyzer-smoke-success:
+    name: Remote Analyzer Success Smoke
+    runs-on: ubuntu-latest
+    needs: unit-tests
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install root dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/pip install -r requirements.txt
+
+      - name: Install analyzer subtree dependencies
+        run: |
+          .venv/bin/pip install -r log-analyzer-service/requirements.txt
+
+      - name: Run remote analyzer success smoke
+        env:
+          VERIFY_RENDER: "false"
+        run: |
+          ./scripts/verify_remote_analyzer_integration.sh
+
+  remote-analyzer-smoke-failure:
+    name: Remote Analyzer Failure Smoke
+    runs-on: ubuntu-latest
+    needs: unit-tests
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install root dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/pip install -r requirements.txt
+
+      - name: Install analyzer subtree dependencies
+        run: |
+          .venv/bin/pip install -r log-analyzer-service/requirements.txt
+
+      - name: Run remote analyzer failure smoke
+        run: |
+          ./scripts/verify_remote_analyzer_failure_modes.sh

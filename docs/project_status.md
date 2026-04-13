@@ -92,7 +92,9 @@ Log Analyzer Abstraction v1 MVP
 - validated remote analyzer integration end-to-end: the platform now successfully calls `log-analyzer-service` in `ANALYZER_MODE=remote`, persists `unified.json` and `report_payload.json`, and remains compatible with downstream DOCX rendering
 - added a repeatable `scripts/verify_remote_analyzer_integration.sh` acceptance script that starts analyzer + platform, uploads a spec-v1 fixture bundle, validates generated artifacts, and optionally verifies DOCX rendering when Carbone is reachable
 - enhanced remote analyzer failure handling so structured analyzer non-200 responses now preserve analyzer-native `code` / `message` / `details`, while non-JSON failures still fall back to stable platform-side diagnostics
-- added a repeatable `scripts/verify_remote_analyzer_failure_modes.sh` smoke script covering analyzer unavailable/timeout, structured analyzer errors, and non-JSON 500 responses
+- added a repeatable `scripts/verify_remote_analyzer_failure_modes.sh` smoke script covering analyzer network failures, structured analyzer errors, and non-JSON 500 responses
+- added a minimal GitHub Actions draft at `.github/workflows/remote-analyzer-smoke.yml` covering root tests, analyzer tests, remote analyzer success smoke, and remote analyzer failure smoke
+- added `docs/ci_smoke_lane.md` to document CI job roles, startup order, and the current optional status of Carbone verification
 
 ## Pending
 

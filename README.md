@@ -189,7 +189,7 @@ The repository also includes a repeatable failure-mode verification script for t
 
 This script verifies:
 
-- analyzer unavailable / timeout path
+- analyzer network failure path
 - structured analyzer error: `unsupported_source_type`
 - structured analyzer error: `source_not_found`
 - non-JSON analyzer `500`
@@ -199,6 +199,25 @@ For each scenario it checks:
 - platform upload response stability
 - task status becomes `analyze_failed`
 - task detail preserves `error.code`, `error.message`, and key `error.details`
+
+## CI Smoke Lane Draft
+
+The repository now includes a minimal GitHub Actions draft for remote analyzer regression:
+
+- [remote-analyzer-smoke.yml](/Users/shulei/Downloads/AI/codex/inspection-report-platform/.github/workflows/remote-analyzer-smoke.yml)
+
+It currently runs:
+
+- root platform tests
+- analyzer subtree tests
+- remote analyzer success smoke
+- remote analyzer failure smoke
+
+Carbone render validation is intentionally not part of the required CI path yet.
+
+See also:
+
+- [ci_smoke_lane.md](/Users/shulei/Downloads/AI/codex/inspection-report-platform/docs/ci_smoke_lane.md)
 
 Supported upload archive formats:
 
