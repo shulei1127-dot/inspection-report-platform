@@ -181,6 +181,25 @@ If you want to force the render check:
 VERIFY_RENDER=true ./scripts/verify_remote_analyzer_integration.sh
 ```
 
+The repository also includes a repeatable failure-mode verification script for the remote analyzer path:
+
+```bash
+./scripts/verify_remote_analyzer_failure_modes.sh
+```
+
+This script verifies:
+
+- analyzer unavailable / timeout path
+- structured analyzer error: `unsupported_source_type`
+- structured analyzer error: `source_not_found`
+- non-JSON analyzer `500`
+
+For each scenario it checks:
+
+- platform upload response stability
+- task status becomes `analyze_failed`
+- task detail preserves `error.code`, `error.message`, and key `error.details`
+
 Supported upload archive formats:
 
 - `.zip`
