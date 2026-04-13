@@ -5,6 +5,8 @@ from app.core.config import get_settings
 from app.schemas.tasks import (
     RenderReportData,
     RenderReportSuccessResponse,
+    TaskCleanupOptions,
+    TaskCleanupSuccessResponse,
     TaskCreateOptions,
     TaskCreateSuccessResponse,
     TaskDeleteSuccessResponse,
@@ -16,6 +18,7 @@ from app.services.report_rendering_service import render_task_report
 from app.services.task_service import (
     TaskLookupError,
     TaskUploadError,
+    cleanup_tasks,
     create_task_from_upload,
     delete_task,
     get_task_report_path,
@@ -68,6 +71,18 @@ async def create_task(
 )
 async def list_tasks() -> TaskListSuccessResponse:
     return TaskListSuccessResponse(data=list_task_results())
+
+
+@router.post(
+    "/api/tasks/cleanup",
+    response_model=TaskCleanupSuccessResponse,
+    status_code=200,
+    summary="Batch cleanup retained task artifacts and records using minimal retention filters",
+)
+async def cleanup_task_artifacts(
+    cleanup_options: TaskCleanupOptions,
+) -> TaskCleanupSuccessResponse:
+    return TaskCleanupSuccessResponse(data=cleanup_tasks(cleanup_options))
 
 
 @router.get(

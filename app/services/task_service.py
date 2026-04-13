@@ -1,7 +1,7 @@
 import shutil
 import uuid
 import zipfile
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from json import JSONDecodeError
 from pathlib import Path
 
@@ -11,6 +11,8 @@ from pydantic import ValidationError
 from app.core.config import get_settings
 from app.schemas.unified_json import UnifiedJsonV1
 from app.schemas.tasks import (
+    TaskCleanupData,
+    TaskCleanupOptions,
     TaskCreateData,
     TaskCreateOptions,
     TaskDeleteData,
@@ -329,6 +331,51 @@ def delete_task(task_id: str) -> TaskDeleteData:
     )
 
 
+def cleanup_tasks(options: TaskCleanupOptions) -> TaskCleanupData:
+    task_results = list_task_results()
+    safe_task_results = [
+        task_result
+        for task_result in task_results
+        if task_result.status in {"rendered", "completed", "failed"}
+    ]
+
+    kept_task_ids: set[str] = set()
+    if options.keep_latest is not None:
+        kept_task_ids = {
+            task_result.task_id
+            for task_result in safe_task_results[: options.keep_latest]
+        }
+
+    deleted_task_ids: list[str] = []
+
+    for task_result in task_results:
+        if task_result.status not in {"rendered", "completed", "failed"}:
+            continue
+
+        if task_result.task_id in kept_task_ids:
+            continue
+
+        if options.older_than_days is not None and not _is_older_than_days(
+            task_result.created_at,
+            days=options.older_than_days,
+        ):
+            continue
+
+        try:
+            delete_task(task_result.task_id)
+        except TaskLookupError:
+            continue
+
+        deleted_task_ids.append(task_result.task_id)
+
+    return TaskCleanupData(
+        scanned_count=len(task_results),
+        deleted_count=len(deleted_task_ids),
+        skipped_count=len(task_results) - len(deleted_task_ids),
+        deleted_task_ids=deleted_task_ids,
+    )
+
+
 def record_task_render_result(task_id: str, render_result: ReportRenderResult) -> None:
     _record_render_result(task_id, render_result)
 
@@ -535,6 +582,13 @@ def _task_sort_key(task_result: TaskResultData) -> tuple[str, str]:
     return (task_result.created_at or "", task_result.task_id)
 
 
+def _is_older_than_days(created_at: str | None, *, days: int) -> bool:
+    parsed_created_at = _parse_iso_datetime(created_at)
+    if parsed_created_at is None:
+        return False
+    return parsed_created_at <= _utc_now() - timedelta(days=days)
+
+
 def _task_result_from_record(task_record: TaskRecord) -> TaskResultData:
     summary = TaskSummary()
     if task_record.unified_json_path is not None:
@@ -575,3 +629,17 @@ def _path_from_record(path_value: str | None) -> Path:
     if path_value is None:
         raise ValueError("path_value cannot be None")
     return Path(path_value)
+
+
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)

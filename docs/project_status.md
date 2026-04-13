@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Database-backed Task Records v1 MVP
+Minimal Retention And Batch Cleanup v1 MVP
 
 ## Completed In This Iteration
 
@@ -72,6 +72,10 @@ Database-backed Task Records v1 MVP
 - started writing task records at upload creation time and updating them as `unified.json`, `report_payload.json`, and optional `report.docx` artifacts are produced
 - updated `GET /api/tasks/{task_id}` and `GET /api/tasks` to prefer database-backed task records while keeping a narrow filesystem fallback for older local artifacts
 - updated task deletion so filesystem cleanup also removes the matching database record
+- added `POST /api/tasks/cleanup` for manual batch cleanup without introducing a scheduler or background worker
+- added minimal retention filters `keep_latest` and `older_than_days`
+- kept batch cleanup limited to safe task statuses `rendered`, `completed`, and `failed`, while always skipping `processing`
+- kept batch cleanup aligned with exact-path single-task deletion so archive, workdir, outputs, and matching database records are removed together
 
 ## Pending
 
@@ -99,4 +103,4 @@ Database-backed Task Records v1 MVP
 - Task-result querying and task history now prefer explicit SQLite task records, but summary counts still remain file-derived from `unified.json`.
 - Input support is now documented and stabilized for v1, but parser coverage is still intentionally narrow and only covers the currently documented files.
 - Task history is now visible through `GET /api/tasks`, but the list is still intentionally minimal and has no pagination, filtering, or search yet.
-- Task cleanup now exists for local trial use, but there is still no retention policy, soft delete, or restore mechanism.
+- Task cleanup now supports manual batch retention filters, but there is still no scheduled cleanup, soft delete, or restore mechanism.

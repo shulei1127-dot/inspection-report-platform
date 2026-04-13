@@ -75,6 +75,7 @@ The repository now includes a real HTTP-based Carbone adapter and a dedicated re
 - `GET /api/tasks`
 - `GET /api/tasks/{task_id}`
 - `DELETE /api/tasks/{task_id}`
+- `POST /api/tasks/cleanup`
 - `POST /api/tasks/{task_id}/render-report`
 - `GET /api/tasks/{task_id}/report`
 
@@ -110,6 +111,7 @@ Notes:
 
 - The backend only renders from `report_payload.json`; it does not render directly from unified JSON.
 - Task detail and task list now prefer SQLite-backed task records, with a narrow filesystem fallback for older local artifacts created before the database layer existed.
+- Manual batch cleanup is now available through `POST /api/tasks/cleanup` with the minimal retention filters `keep_latest` and `older_than_days`.
 - For Carbone On-Premise, authentication is disabled by default unless you explicitly enable it.
 - Carbone supports direct DOCX-to-DOCX generation without LibreOffice. LibreOffice is required when you need format conversion such as DOCX-to-PDF.
 - Official Docker variants include `slim` for minimal runtime and `latest/full` for LibreOffice-enabled runtime.

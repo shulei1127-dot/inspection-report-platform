@@ -2,6 +2,7 @@ import io
 import json
 import sqlite3
 import zipfile
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -9,6 +10,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.schemas.report_payload import ReportPayloadV1
 from app.schemas.unified_json import UnifiedJsonV1
+from app.services import task_service
 
 
 client = TestClient(app)
@@ -286,6 +288,180 @@ def test_delete_task_returns_404_when_task_is_missing(
             },
         },
     }
+
+
+def test_cleanup_tasks_keep_latest_removes_older_safe_tasks(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    _write_task_files(
+        tmp_path,
+        task_id="tsk_20260413_010101_oldest01",
+        summary={"service_count": 1, "container_count": 0, "issue_count": 0},
+        include_report=False,
+    )
+    _write_task_db_row(
+        tmp_path,
+        task_id="tsk_20260413_010101_oldest01",
+        status="completed",
+        created_at="2026-04-13T01:01:01Z",
+        updated_at="2026-04-13T01:01:01Z",
+        archive_path="uploads/tsk_20260413_010101_oldest01.zip",
+        workdir_path="workdir/tsk_20260413_010101_oldest01",
+        unified_json_path="workdir/tsk_20260413_010101_oldest01/unified.json",
+        report_payload_path="workdir/tsk_20260413_010101_oldest01/report_payload.json",
+        report_file_path=None,
+    )
+    _write_task_files(
+        tmp_path,
+        task_id="tsk_20260413_020202_middle02",
+        summary={"service_count": 1, "container_count": 1, "issue_count": 1},
+        include_report=True,
+    )
+    _write_task_db_row(
+        tmp_path,
+        task_id="tsk_20260413_020202_middle02",
+        status="rendered",
+        created_at="2026-04-13T02:02:02Z",
+        updated_at="2026-04-13T02:02:02Z",
+        archive_path="uploads/tsk_20260413_020202_middle02.zip",
+        workdir_path="workdir/tsk_20260413_020202_middle02",
+        unified_json_path="workdir/tsk_20260413_020202_middle02/unified.json",
+        report_payload_path="workdir/tsk_20260413_020202_middle02/report_payload.json",
+        report_file_path="outputs/tsk_20260413_020202_middle02/report.docx",
+    )
+    _write_task_files(
+        tmp_path,
+        task_id="tsk_20260413_030303_latest03",
+        summary={"service_count": 2, "container_count": 0, "issue_count": 0},
+        include_report=False,
+    )
+    _write_task_db_row(
+        tmp_path,
+        task_id="tsk_20260413_030303_latest03",
+        status="completed",
+        created_at="2026-04-13T03:03:03Z",
+        updated_at="2026-04-13T03:03:03Z",
+        archive_path="uploads/tsk_20260413_030303_latest03.zip",
+        workdir_path="workdir/tsk_20260413_030303_latest03",
+        unified_json_path="workdir/tsk_20260413_030303_latest03/unified.json",
+        report_payload_path="workdir/tsk_20260413_030303_latest03/report_payload.json",
+        report_file_path=None,
+    )
+
+    response = client.post("/api/tasks/cleanup", json={"keep_latest": 1})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["data"] == {
+        "scanned_count": 3,
+        "deleted_count": 2,
+        "skipped_count": 1,
+        "deleted_task_ids": [
+            "tsk_20260413_020202_middle02",
+            "tsk_20260413_010101_oldest01",
+        ],
+    }
+
+    assert _fetch_task_db_row(tmp_path, "tsk_20260413_030303_latest03") is not None
+    assert (tmp_path / "workdir" / "tsk_20260413_030303_latest03").exists()
+
+    assert _fetch_task_db_row(tmp_path, "tsk_20260413_020202_middle02") is None
+    assert _fetch_task_db_row(tmp_path, "tsk_20260413_010101_oldest01") is None
+    assert not (tmp_path / "workdir" / "tsk_20260413_020202_middle02").exists()
+    assert not (tmp_path / "workdir" / "tsk_20260413_010101_oldest01").exists()
+    assert not (tmp_path / "outputs" / "tsk_20260413_020202_middle02").exists()
+
+
+def test_cleanup_tasks_older_than_days_skips_processing_and_recent_tasks(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        task_service,
+        "_utc_now",
+        lambda: datetime(2026, 4, 13, 12, 0, 0, tzinfo=UTC),
+    )
+
+    _write_task_files(
+        tmp_path,
+        task_id="tsk_20260410_010101_olddone01",
+        summary={"service_count": 1, "container_count": 0, "issue_count": 0},
+        include_report=False,
+    )
+    _write_task_db_row(
+        tmp_path,
+        task_id="tsk_20260410_010101_olddone01",
+        status="completed",
+        created_at="2026-04-10T01:01:01Z",
+        updated_at="2026-04-10T01:01:01Z",
+        archive_path="uploads/tsk_20260410_010101_olddone01.zip",
+        workdir_path="workdir/tsk_20260410_010101_olddone01",
+        unified_json_path="workdir/tsk_20260410_010101_olddone01/unified.json",
+        report_payload_path="workdir/tsk_20260410_010101_olddone01/report_payload.json",
+        report_file_path=None,
+    )
+    _write_task_files(
+        tmp_path,
+        task_id="tsk_20260410_020202_oldproc02",
+        summary={"service_count": 1, "container_count": 1, "issue_count": 0},
+        include_report=False,
+    )
+    _write_task_db_row(
+        tmp_path,
+        task_id="tsk_20260410_020202_oldproc02",
+        status="processing",
+        created_at="2026-04-10T02:02:02Z",
+        updated_at="2026-04-10T02:02:02Z",
+        archive_path="uploads/tsk_20260410_020202_oldproc02.zip",
+        workdir_path="workdir/tsk_20260410_020202_oldproc02",
+        unified_json_path="workdir/tsk_20260410_020202_oldproc02/unified.json",
+        report_payload_path="workdir/tsk_20260410_020202_oldproc02/report_payload.json",
+        report_file_path=None,
+    )
+    _write_task_files(
+        tmp_path,
+        task_id="tsk_20260412_030303_recent03",
+        summary={"service_count": 2, "container_count": 1, "issue_count": 0},
+        include_report=True,
+    )
+    _write_task_db_row(
+        tmp_path,
+        task_id="tsk_20260412_030303_recent03",
+        status="rendered",
+        created_at="2026-04-12T03:03:03Z",
+        updated_at="2026-04-12T03:03:03Z",
+        archive_path="uploads/tsk_20260412_030303_recent03.zip",
+        workdir_path="workdir/tsk_20260412_030303_recent03",
+        unified_json_path="workdir/tsk_20260412_030303_recent03/unified.json",
+        report_payload_path="workdir/tsk_20260412_030303_recent03/report_payload.json",
+        report_file_path="outputs/tsk_20260412_030303_recent03/report.docx",
+    )
+
+    response = client.post("/api/tasks/cleanup", json={"older_than_days": 2})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["data"] == {
+        "scanned_count": 3,
+        "deleted_count": 1,
+        "skipped_count": 2,
+        "deleted_task_ids": ["tsk_20260410_010101_olddone01"],
+    }
+
+    assert _fetch_task_db_row(tmp_path, "tsk_20260410_010101_olddone01") is None
+    assert not (tmp_path / "workdir" / "tsk_20260410_010101_olddone01").exists()
+
+    assert _fetch_task_db_row(tmp_path, "tsk_20260410_020202_oldproc02") is not None
+    assert (tmp_path / "workdir" / "tsk_20260410_020202_oldproc02").exists()
+
+    assert _fetch_task_db_row(tmp_path, "tsk_20260412_030303_recent03") is not None
+    assert (tmp_path / "outputs" / "tsk_20260412_030303_recent03").exists()
 
 
 def test_create_task_parses_supported_files_into_unified_json_and_report_payload(

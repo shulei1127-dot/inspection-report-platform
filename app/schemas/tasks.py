@@ -1,11 +1,22 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class TaskCreateOptions(BaseModel):
     parser_profile: str = "default"
     report_lang: str = "zh-CN"
+
+
+class TaskCleanupOptions(BaseModel):
+    keep_latest: int | None = Field(default=None, ge=0)
+    older_than_days: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def validate_cleanup_filter(self) -> "TaskCleanupOptions":
+        if self.keep_latest is None and self.older_than_days is None:
+            raise ValueError("At least one cleanup filter must be provided.")
+        return self
 
 
 class TaskSummary(BaseModel):
@@ -64,6 +75,18 @@ class TaskDeleteData(BaseModel):
 class TaskDeleteSuccessResponse(BaseModel):
     success: Literal[True] = True
     data: TaskDeleteData
+
+
+class TaskCleanupData(BaseModel):
+    scanned_count: int = 0
+    deleted_count: int = 0
+    skipped_count: int = 0
+    deleted_task_ids: list[str] = Field(default_factory=list)
+
+
+class TaskCleanupSuccessResponse(BaseModel):
+    success: Literal[True] = True
+    data: TaskCleanupData
 
 
 class RenderReportData(BaseModel):
