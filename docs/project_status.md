@@ -90,6 +90,7 @@ Log Analyzer Abstraction v1 MVP
 - added a minimal `log-analyzer-service/` scaffold with app/api/core/schemas/services/parsers layout, health endpoint, placeholder analyze route, config module, and implementation notes for the next standalone-service phase
 - upgraded `log-analyzer-service/` from placeholder scaffold to a minimal runnable service with real `GET /health`, real directory-based `POST /analyze`, migrated parser support for `system_info` / `systemctl_status` / `docker_ps`, and structured analyzer errors
 - validated remote analyzer integration end-to-end: the platform now successfully calls `log-analyzer-service` in `ANALYZER_MODE=remote`, persists `unified.json` and `report_payload.json`, and remains compatible with downstream DOCX rendering
+- added a repeatable `scripts/verify_remote_analyzer_integration.sh` acceptance script that starts analyzer + platform, uploads a spec-v1 fixture bundle, validates generated artifacts, and optionally verifies DOCX rendering when Carbone is reachable
 
 ## Pending
 
@@ -106,6 +107,7 @@ Log Analyzer Abstraction v1 MVP
 - richer analyzer coverage beyond the current migrated parser set
 - archive-upload mode for analyzer service
 - richer remote analyzer error mapping from structured non-200 analyzer responses
+- scripted remote analyzer verification in CI or a dedicated smoke-test lane
 
 ## Notes
 
@@ -128,3 +130,4 @@ Log Analyzer Abstraction v1 MVP
 - The platform now supports a local-vs-remote analyzer seam, but only the local implementation is used in production flow until a separate analyzer service is introduced.
 - Analyzer request modeling already uses a `source` object with directory mode so the future service boundary can expand without breaking the contract shape.
 - The new `log-analyzer-service/` subtree is intentionally only a scaffold and should not be mistaken for a finished standalone service implementation.
+- Remote analyzer verification is now scriptable for local regression and demo use, but it is not yet wired into CI.

@@ -146,6 +146,40 @@ If Carbone is available, the rendered report flow remains unchanged:
 curl -X POST http://127.0.0.1:8013/api/tasks/<task_id>/render-report
 ```
 
+## Repeatable Remote Analyzer Verification
+
+The repository now includes a repeatable acceptance script for the remote analyzer path:
+
+```bash
+./scripts/verify_remote_analyzer_integration.sh
+```
+
+The script:
+
+- starts `log-analyzer-service` on configurable local ports
+- starts the platform in `ANALYZER_MODE=remote`
+- builds a sample archive from `tests/fixtures/input_bundle_spec_v1`
+- uploads that archive through `POST /api/tasks`
+- validates `workdir/{task_id}/unified.json`
+- validates `workdir/{task_id}/report_payload.json`
+- checks `schema_version` and `payload_version`
+- optionally verifies `report.docx` if Carbone is reachable
+
+Useful environment overrides:
+
+```bash
+APP_PORT=8013
+ANALYZER_PORT=8090
+VERIFY_RENDER=auto
+CARBONE_BASE_URL=http://127.0.0.1:4000
+```
+
+If you want to force the render check:
+
+```bash
+VERIFY_RENDER=true ./scripts/verify_remote_analyzer_integration.sh
+```
+
 Supported upload archive formats:
 
 - `.zip`
