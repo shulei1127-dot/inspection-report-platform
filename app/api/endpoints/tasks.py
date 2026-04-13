@@ -21,6 +21,7 @@ from app.services.task_service import (
     get_task_report_path,
     get_task_result,
     list_task_results,
+    record_task_render_result,
 )
 
 
@@ -103,6 +104,7 @@ async def get_task(task_id: str) -> TaskResultSuccessResponse | JSONResponse:
 )
 async def render_report(task_id: str) -> RenderReportSuccessResponse | JSONResponse:
     result = render_task_report(task_id)
+    record_task_render_result(task_id, result)
     settings = get_settings()
 
     if not result.success or result.output_path is None:

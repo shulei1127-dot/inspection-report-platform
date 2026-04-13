@@ -24,7 +24,18 @@ from app.services.report_payload_mapper import (
     map_unified_json_to_report_payload,
     persist_report_payload,
 )
-from app.services.report_rendering_service import maybe_render_report_from_payload_file
+from app.services.report_rendering_service import (
+    ReportRenderResult,
+    maybe_render_report_from_payload_file,
+)
+from app.services.task_repository import (
+    TaskRecord,
+    create_task_record,
+    delete_task_record,
+    get_task_record,
+    list_task_records,
+    update_task_record,
+)
 
 
 class TaskUploadError(Exception):
@@ -111,6 +122,12 @@ def create_task_from_upload(upload: UploadFile | None, options: TaskCreateOption
 
     settings.uploads_dir.mkdir(parents=True, exist_ok=True)
     task_workdir.mkdir(parents=True, exist_ok=True)
+    create_task_record(
+        task_id=task_id,
+        status="processing",
+        archive_path=zip_path.as_posix(),
+        workdir_path=task_workdir.as_posix(),
+    )
 
     try:
         _save_upload(upload, zip_path)
@@ -123,22 +140,56 @@ def create_task_from_upload(upload: UploadFile | None, options: TaskCreateOption
             archive_size_bytes=zip_path.stat().st_size,
         )
         persist_unified_json(unified_json, unified_json_path)
+        update_task_record(
+            task_id,
+            unified_json_path=unified_json_path.as_posix(),
+            error_code=None,
+            error_message=None,
+        )
         report_payload = map_unified_json_to_report_payload(
             unified_json,
             report_lang=options.report_lang,
         )
         persist_report_payload(report_payload, report_payload_path)
+        update_task_record(
+            task_id,
+            status="completed",
+            unified_json_path=unified_json_path.as_posix(),
+            report_payload_path=report_payload_path.as_posix(),
+            report_file_path=None,
+            error_code=None,
+            error_message=None,
+        )
         render_result = maybe_render_report_from_payload_file(
             task_id,
             report_payload_path,
         )
         if render_result.success and render_result.output_path is not None:
             report_file_path = render_result.output_path.as_posix()
-    except TaskUploadError:
+        _record_render_result(task_id, render_result)
+    except TaskUploadError as exc:
         _cleanup_failed_task(zip_path, task_workdir)
+        update_task_record(
+            task_id,
+            status="failed",
+            unified_json_path=None,
+            report_payload_path=None,
+            report_file_path=None,
+            error_code=exc.code,
+            error_message=exc.message,
+        )
         raise
     except OSError as exc:
         _cleanup_failed_task(zip_path, task_workdir)
+        update_task_record(
+            task_id,
+            status="failed",
+            unified_json_path=None,
+            report_payload_path=None,
+            report_file_path=None,
+            error_code="internal_error",
+            error_message="Failed to persist the uploaded task files.",
+        )
         raise TaskUploadError(
             status_code=500,
             code="internal_error",
@@ -148,7 +199,7 @@ def create_task_from_upload(upload: UploadFile | None, options: TaskCreateOption
 
     return TaskCreateData(
         task_id=task_id,
-        status="completed",
+        status="rendered" if report_file_path is not None else "completed",
         filename=filename,
         parser_profile=options.parser_profile,
         report_lang=options.report_lang,
@@ -172,6 +223,10 @@ def generate_task_id() -> str:
 
 
 def get_task_result(task_id: str) -> TaskResultData:
+    task_record = get_task_record(task_id)
+    if task_record is not None:
+        return _task_result_from_record(task_record)
+
     artifact_paths = _resolve_task_paths(task_id)
     _ensure_task_exists(task_id, artifact_paths=artifact_paths)
     summary = _load_task_summary(artifact_paths["unified_json_path"])
@@ -205,14 +260,22 @@ def get_task_result(task_id: str) -> TaskResultData:
 
 
 def list_task_results() -> list[TaskResultData]:
+    task_records = list_task_records()
+    task_results = [_task_result_from_record(task_record) for task_record in task_records]
+
     settings = get_settings()
     task_ids = _discover_task_ids(
         uploads_dir=settings.uploads_dir,
         workdir_dir=settings.workdir_dir,
         outputs_dir=settings.outputs_dir,
     )
+    database_task_ids = {task_record.task_id for task_record in task_records}
 
-    task_results = [get_task_result(task_id) for task_id in task_ids]
+    task_results.extend(
+        get_task_result(task_id)
+        for task_id in task_ids
+        if task_id not in database_task_ids
+    )
     task_results.sort(
         key=lambda result: _task_sort_key(result),
         reverse=True,
@@ -221,7 +284,8 @@ def list_task_results() -> list[TaskResultData]:
 
 
 def get_task_report_path(task_id: str) -> Path:
-    report_file_path = _resolve_task_paths(task_id)["report_file_path"]
+    task_record = get_task_record(task_id)
+    report_file_path = _resolve_task_paths(task_id, task_record=task_record)["report_file_path"]
     if not report_file_path.exists():
         raise TaskLookupError(
             status_code=404,
@@ -233,8 +297,11 @@ def get_task_report_path(task_id: str) -> Path:
 
 
 def delete_task(task_id: str) -> TaskDeleteData:
-    artifact_paths = _resolve_task_paths(task_id)
-    _ensure_task_exists(task_id, artifact_paths=artifact_paths)
+    task_record = get_task_record(task_id)
+    artifact_paths = _resolve_task_paths(task_id, task_record=task_record)
+
+    if task_record is None:
+        _ensure_task_exists(task_id, artifact_paths=artifact_paths)
 
     deleted_paths: list[str] = []
 
@@ -253,11 +320,17 @@ def delete_task(task_id: str) -> TaskDeleteData:
         shutil.rmtree(outputs_dir)
         deleted_paths.append(outputs_dir.as_posix())
 
+    delete_task_record(task_id)
+
     return TaskDeleteData(
         task_id=task_id,
         deleted=True,
         deleted_paths=deleted_paths,
     )
+
+
+def record_task_render_result(task_id: str, render_result: ReportRenderResult) -> None:
+    _record_render_result(task_id, render_result)
 
 
 def _save_upload(upload: UploadFile, target_path: Path) -> None:
@@ -336,17 +409,42 @@ def _load_task_summary(unified_json_path: Path) -> TaskSummary:
     )
 
 
-def _resolve_task_paths(task_id: str) -> dict[str, Path]:
+def _resolve_task_paths(
+    task_id: str,
+    task_record: TaskRecord | None = None,
+) -> dict[str, Path]:
     settings = get_settings()
-    task_workdir = settings.workdir_dir / task_id
-    outputs_task_dir = settings.outputs_dir / task_id
+    task_workdir = _path_from_record(task_record.workdir_path) if task_record else None
+    outputs_task_dir = (
+        _path_from_record(task_record.report_file_path).parent
+        if task_record is not None and task_record.report_file_path is not None
+        else None
+    )
+    resolved_task_workdir = task_workdir or settings.workdir_dir / task_id
+    resolved_outputs_task_dir = outputs_task_dir or settings.outputs_dir / task_id
     return {
-        "stored_zip_path": settings.uploads_dir / f"{task_id}.zip",
-        "task_workdir": task_workdir,
-        "unified_json_path": task_workdir / "unified.json",
-        "report_payload_path": task_workdir / "report_payload.json",
-        "outputs_task_dir": outputs_task_dir,
-        "report_file_path": outputs_task_dir / "report.docx",
+        "stored_zip_path": (
+            _path_from_record(task_record.archive_path)
+            if task_record is not None and task_record.archive_path is not None
+            else settings.uploads_dir / f"{task_id}.zip"
+        ),
+        "task_workdir": resolved_task_workdir,
+        "unified_json_path": (
+            _path_from_record(task_record.unified_json_path)
+            if task_record is not None and task_record.unified_json_path is not None
+            else resolved_task_workdir / "unified.json"
+        ),
+        "report_payload_path": (
+            _path_from_record(task_record.report_payload_path)
+            if task_record is not None and task_record.report_payload_path is not None
+            else resolved_task_workdir / "report_payload.json"
+        ),
+        "outputs_task_dir": resolved_outputs_task_dir,
+        "report_file_path": (
+            _path_from_record(task_record.report_file_path)
+            if task_record is not None and task_record.report_file_path is not None
+            else resolved_outputs_task_dir / "report.docx"
+        ),
     }
 
 
@@ -435,3 +533,45 @@ def _discover_task_ids(
 
 def _task_sort_key(task_result: TaskResultData) -> tuple[str, str]:
     return (task_result.created_at or "", task_result.task_id)
+
+
+def _task_result_from_record(task_record: TaskRecord) -> TaskResultData:
+    summary = TaskSummary()
+    if task_record.unified_json_path is not None:
+        summary = _load_task_summary(Path(task_record.unified_json_path))
+
+    return TaskResultData(
+        task_id=task_record.task_id,
+        status=task_record.status,
+        created_at=task_record.created_at,
+        unified_json_path=task_record.unified_json_path,
+        report_payload_path=task_record.report_payload_path,
+        report_file_path=task_record.report_file_path,
+        summary=summary,
+    )
+
+
+def _record_render_result(task_id: str, render_result: ReportRenderResult) -> None:
+    if render_result.success and render_result.output_path is not None:
+        update_task_record(
+            task_id,
+            status="rendered",
+            report_file_path=render_result.output_path.as_posix(),
+            error_code=None,
+            error_message=None,
+        )
+        return
+
+    if render_result.attempted:
+        update_task_record(
+            task_id,
+            status="completed",
+            error_code=render_result.error_code,
+            error_message=render_result.error_message,
+        )
+
+
+def _path_from_record(path_value: str | None) -> Path:
+    if path_value is None:
+        raise ValueError("path_value cannot be None")
+    return Path(path_value)

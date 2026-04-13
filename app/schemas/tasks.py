@@ -16,7 +16,7 @@ class TaskSummary(BaseModel):
 
 class TaskCreateData(BaseModel):
     task_id: str
-    status: Literal["completed", "failed"]
+    status: Literal["completed", "failed", "rendered"]
     contract_version: str = "task-response/v1"
     filename: str
     parser_profile: str
@@ -36,7 +36,7 @@ class TaskCreateSuccessResponse(BaseModel):
 
 class TaskResultData(BaseModel):
     task_id: str
-    status: Literal["processing", "completed", "rendered"]
+    status: Literal["processing", "completed", "rendered", "failed"]
     contract_version: str = "task-response/v1"
     created_at: str | None = None
     unified_json_path: str | None = None

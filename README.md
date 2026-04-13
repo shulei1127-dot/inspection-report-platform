@@ -60,6 +60,14 @@ Expected response:
 {"status":"ok","service":"inspection-report-platform"}
 ```
 
+Minimal local persistence now uses SQLite through Python's standard library:
+
+```bash
+TASKS_DB_PATH=tasks.sqlite3
+```
+
+If unset, task records are stored in `./tasks.sqlite3`.
+
 ## Carbone Runtime
 
 The repository now includes a real HTTP-based Carbone adapter and a dedicated render endpoint:
@@ -101,6 +109,7 @@ REPORT_RENDERING_ENABLED=false
 Notes:
 
 - The backend only renders from `report_payload.json`; it does not render directly from unified JSON.
+- Task detail and task list now prefer SQLite-backed task records, with a narrow filesystem fallback for older local artifacts created before the database layer existed.
 - For Carbone On-Premise, authentication is disabled by default unless you explicitly enable it.
 - Carbone supports direct DOCX-to-DOCX generation without LibreOffice. LibreOffice is required when you need format conversion such as DOCX-to-PDF.
 - Official Docker variants include `slim` for minimal runtime and `latest/full` for LibreOffice-enabled runtime.

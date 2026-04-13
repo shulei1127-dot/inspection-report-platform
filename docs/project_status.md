@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Minimal Task Cleanup API MVP
+Database-backed Task Records v1 MVP
 
 ## Completed In This Iteration
 
@@ -68,6 +68,10 @@ Minimal Task Cleanup API MVP
 - kept task list generation file-based and aligned its item structure with the existing single-task result format
 - added `DELETE /api/tasks/{task_id}` to remove the uploaded archive, workdir, and output directory for a task
 - kept cleanup strictly scoped to the exact task-specific paths derived from `task_id`
+- added a minimal SQLite-backed `tasks` table for explicit task lifecycle records without introducing a full database stack
+- started writing task records at upload creation time and updating them as `unified.json`, `report_payload.json`, and optional `report.docx` artifacts are produced
+- updated `GET /api/tasks/{task_id}` and `GET /api/tasks` to prefer database-backed task records while keeping a narrow filesystem fallback for older local artifacts
+- updated task deletion so filesystem cleanup also removes the matching database record
 
 ## Pending
 
@@ -78,11 +82,11 @@ Minimal Task Cleanup API MVP
 - product-line and device-specific multi-template system
 - AI analysis workflow
 - frontend
-- persistence layer
+- richer persistence layer behavior beyond a single SQLite table
 
 ## Notes
 
-- This iteration intentionally avoids database and real parser integration.
+- This iteration now includes a minimal SQLite persistence layer but intentionally avoids ORM, migrations, and multi-table design.
 - The current upload path synchronously writes parser-generated `unified.json` and `report_payload.json` artifacts.
 - The parser is no longer pure stub: `system_info`, `systemctl_status`, and `docker_ps` now produce partial real parsed data, while the rest of the contract still falls back to defaults.
 - Issue generation is still rule-based MVP logic and currently only covers a small, explicit status set for services and containers.
@@ -92,7 +96,7 @@ Minimal Task Cleanup API MVP
 - Report rendering now targets the real Carbone HTTP API, and the adapter shape is aligned with official HTTP API documentation.
 - Real local rendering is now verified on this machine with a cached official Carbone image.
 - Raw shell-level connectivity to Docker Hub is still inconsistent on this machine, but Docker Desktop proxying is sufficient for image pulls and local Carbone runtime startup.
-- Task-result querying and report download now have HTTP delivery endpoints, but task persistence is still inferred from the filesystem rather than stored as explicit records.
+- Task-result querying and task history now prefer explicit SQLite task records, but summary counts still remain file-derived from `unified.json`.
 - Input support is now documented and stabilized for v1, but parser coverage is still intentionally narrow and only covers the currently documented files.
 - Task history is now visible through `GET /api/tasks`, but the list is still intentionally minimal and has no pagination, filtering, or search yet.
 - Task cleanup now exists for local trial use, but there is still no retention policy, soft delete, or restore mechanism.

@@ -1,5 +1,6 @@
 import io
 import json
+import sqlite3
 import zipfile
 from pathlib import Path
 
@@ -29,15 +30,23 @@ def test_get_task_returns_minimal_result_for_existing_task(
     assert create_response.status_code == 201
 
     task_id = create_response.json()["data"]["task_id"]
+    task_row = _fetch_task_db_row(tmp_path, task_id)
 
     response = client.get(f"/api/tasks/{task_id}")
 
+    assert task_row is not None
+    assert task_row["status"] == "completed"
+    assert task_row["archive_path"] == f"uploads/{task_id}.zip"
+    assert task_row["workdir_path"] == f"workdir/{task_id}"
+    assert task_row["unified_json_path"] == f"workdir/{task_id}/unified.json"
+    assert task_row["report_payload_path"] == f"workdir/{task_id}/report_payload.json"
+    assert task_row["report_file_path"] is None
     assert response.status_code == 200
     payload = response.json()
     assert payload["success"] is True
     assert payload["data"]["task_id"] == task_id
     assert payload["data"]["status"] == "completed"
-    assert payload["data"]["created_at"] is not None
+    assert payload["data"]["created_at"] == task_row["created_at"]
     assert payload["data"]["unified_json_path"] == f"workdir/{task_id}/unified.json"
     assert payload["data"]["report_payload_path"] == f"workdir/{task_id}/report_payload.json"
     assert payload["data"]["report_file_path"] is None
@@ -56,17 +65,53 @@ def test_list_tasks_returns_multiple_items_in_latest_first_order(
         summary={"service_count": 1, "container_count": 0, "issue_count": 0},
         include_report=False,
     )
+    _write_task_db_row(
+        tmp_path,
+        task_id="tsk_20260412_010101_older001",
+        status="completed",
+        created_at="2026-04-12T01:01:01Z",
+        updated_at="2026-04-12T01:01:01Z",
+        archive_path="uploads/tsk_20260412_010101_older001.zip",
+        workdir_path="workdir/tsk_20260412_010101_older001",
+        unified_json_path="workdir/tsk_20260412_010101_older001/unified.json",
+        report_payload_path="workdir/tsk_20260412_010101_older001/report_payload.json",
+        report_file_path=None,
+    )
     _write_task_files(
         tmp_path,
         task_id="tsk_20260412_030303_latest03",
         summary={"service_count": 2, "container_count": 1, "issue_count": 1},
         include_report=True,
     )
+    _write_task_db_row(
+        tmp_path,
+        task_id="tsk_20260412_030303_latest03",
+        status="rendered",
+        created_at="2026-04-12T03:03:03Z",
+        updated_at="2026-04-12T03:03:03Z",
+        archive_path="uploads/tsk_20260412_030303_latest03.zip",
+        workdir_path="workdir/tsk_20260412_030303_latest03",
+        unified_json_path="workdir/tsk_20260412_030303_latest03/unified.json",
+        report_payload_path="workdir/tsk_20260412_030303_latest03/report_payload.json",
+        report_file_path="outputs/tsk_20260412_030303_latest03/report.docx",
+    )
     _write_task_files(
         tmp_path,
         task_id="tsk_20260412_020202_middle02",
         summary={"service_count": 1, "container_count": 1, "issue_count": 0},
         include_report=False,
+    )
+    _write_task_db_row(
+        tmp_path,
+        task_id="tsk_20260412_020202_middle02",
+        status="completed",
+        created_at="2026-04-12T02:02:02Z",
+        updated_at="2026-04-12T02:02:02Z",
+        archive_path="uploads/tsk_20260412_020202_middle02.zip",
+        workdir_path="workdir/tsk_20260412_020202_middle02",
+        unified_json_path="workdir/tsk_20260412_020202_middle02/unified.json",
+        report_payload_path="workdir/tsk_20260412_020202_middle02/report_payload.json",
+        report_file_path=None,
     )
 
     response = client.get("/api/tasks")
@@ -92,6 +137,48 @@ def test_list_tasks_returns_multiple_items_in_latest_first_order(
     assert payload["data"][2]["unified_json_path"] == (
         "workdir/tsk_20260412_010101_older001/unified.json"
     )
+
+
+def test_get_task_prefers_database_record_when_available(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    task_id = "tsk_20260412_080808_dbfirst01"
+    _write_task_files(
+        tmp_path,
+        task_id=task_id,
+        summary={"service_count": 1, "container_count": 1, "issue_count": 0},
+        include_report=False,
+    )
+    _write_task_db_row(
+        tmp_path,
+        task_id=task_id,
+        status="failed",
+        created_at="2026-04-12T08:08:08Z",
+        updated_at="2026-04-12T08:09:09Z",
+        archive_path=f"uploads/{task_id}.zip",
+        workdir_path=f"workdir/{task_id}",
+        unified_json_path=f"workdir/{task_id}/unified.json",
+        report_payload_path=f"workdir/{task_id}/report_payload.json",
+        report_file_path=None,
+        error_code="extract_failed",
+        error_message="synthetic failure for database-priority test",
+    )
+
+    response = client.get(f"/api/tasks/{task_id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["data"]["task_id"] == task_id
+    assert payload["data"]["status"] == "failed"
+    assert payload["data"]["created_at"] == "2026-04-12T08:08:08Z"
+    assert payload["data"]["summary"] == {
+        "service_count": 1,
+        "container_count": 1,
+        "issue_count": 0,
+    }
 
 
 def test_get_task_report_downloads_existing_docx(
@@ -169,6 +256,7 @@ def test_delete_task_removes_task_artifacts_and_followup_queries_fail(
     assert not (tmp_path / "uploads" / f"{task_id}.zip").exists()
     assert not (tmp_path / "workdir" / task_id).exists()
     assert not (tmp_path / "outputs" / task_id).exists()
+    assert _fetch_task_db_row(tmp_path, task_id) is None
 
     get_task_response = client.get(f"/api/tasks/{task_id}")
     assert get_task_response.status_code == 404
@@ -358,12 +446,20 @@ def test_create_task_uploads_extracts_zip_and_writes_contract_artifacts(
     assert payload["data"]["report_file_path"] is None
 
     task_id = payload["data"]["task_id"]
+    task_row = _fetch_task_db_row(tmp_path, task_id)
     stored_zip_path = tmp_path / "uploads" / f"{task_id}.zip"
     unified_json_path = tmp_path / "workdir" / task_id / "unified.json"
     report_payload_path = tmp_path / "workdir" / task_id / "report_payload.json"
     extracted_log_path = tmp_path / "workdir" / task_id / "logs" / "system.log"
     extracted_info_path = tmp_path / "workdir" / task_id / "meta" / "info.txt"
 
+    assert task_row is not None
+    assert task_row["status"] == "completed"
+    assert task_row["archive_path"] == f"uploads/{task_id}.zip"
+    assert task_row["workdir_path"] == f"workdir/{task_id}"
+    assert task_row["unified_json_path"] == f"workdir/{task_id}/unified.json"
+    assert task_row["report_payload_path"] == f"workdir/{task_id}/report_payload.json"
+    assert task_row["report_file_path"] is None
     assert stored_zip_path.exists()
     assert payload["data"]["unified_json_path"] == f"workdir/{task_id}/unified.json"
     assert payload["data"]["report_payload_path"] == f"workdir/{task_id}/report_payload.json"
@@ -576,3 +672,105 @@ def _write_task_files(
 
     if include_report:
         (outputs_dir / "report.docx").write_bytes(_build_docx_bytes("Report content"))
+
+
+def _fetch_task_db_row(root_dir: Path, task_id: str) -> sqlite3.Row | None:
+    db_path = root_dir / "tasks.sqlite3"
+    if not db_path.exists():
+        return None
+
+    connection = sqlite3.connect(db_path)
+    connection.row_factory = sqlite3.Row
+    try:
+        return connection.execute(
+            """
+            SELECT
+                task_id,
+                status,
+                created_at,
+                updated_at,
+                archive_path,
+                workdir_path,
+                unified_json_path,
+                report_payload_path,
+                report_file_path,
+                error_code,
+                error_message
+            FROM tasks
+            WHERE task_id = ?
+            """,
+            (task_id,),
+        ).fetchone()
+    finally:
+        connection.close()
+
+
+def _write_task_db_row(
+    root_dir: Path,
+    *,
+    task_id: str,
+    status: str,
+    created_at: str,
+    updated_at: str,
+    archive_path: str | None,
+    workdir_path: str | None,
+    unified_json_path: str | None,
+    report_payload_path: str | None,
+    report_file_path: str | None,
+    error_code: str | None = None,
+    error_message: str | None = None,
+) -> None:
+    db_path = root_dir / "tasks.sqlite3"
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tasks (
+                task_id TEXT PRIMARY KEY,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                archive_path TEXT,
+                workdir_path TEXT,
+                unified_json_path TEXT,
+                report_payload_path TEXT,
+                report_file_path TEXT,
+                error_code TEXT,
+                error_message TEXT
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT OR REPLACE INTO tasks (
+                task_id,
+                status,
+                created_at,
+                updated_at,
+                archive_path,
+                workdir_path,
+                unified_json_path,
+                report_payload_path,
+                report_file_path,
+                error_code,
+                error_message
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                task_id,
+                status,
+                created_at,
+                updated_at,
+                archive_path,
+                workdir_path,
+                unified_json_path,
+                report_payload_path,
+                report_file_path,
+                error_code,
+                error_message,
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()

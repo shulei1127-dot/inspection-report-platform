@@ -16,6 +16,7 @@ class Settings:
     app_env: str
     app_host: str
     app_port: int
+    tasks_db_path: Path
     uploads_dir: Path
     workdir_dir: Path
     outputs_dir: Path
@@ -36,6 +37,7 @@ def get_settings() -> Settings:
         app_env=os.getenv("APP_ENV", "dev"),
         app_host=os.getenv("APP_HOST", "0.0.0.0"),
         app_port=int(os.getenv("APP_PORT", "8000")),
+        tasks_db_path=Path(os.getenv("TASKS_DB_PATH", "tasks.sqlite3")),
         uploads_dir=Path(os.getenv("UPLOADS_DIR", "uploads")),
         workdir_dir=Path(os.getenv("WORKDIR_DIR", "workdir")),
         outputs_dir=Path(os.getenv("OUTPUTS_DIR", "outputs")),
