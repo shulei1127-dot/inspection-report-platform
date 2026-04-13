@@ -2,7 +2,7 @@
 
 `log-analyzer-service` is the planned standalone parser service for the inspection report platform.
 
-This subdirectory is intentionally a minimal scaffold, not a full implementation.
+This subdirectory is intentionally a minimal standalone implementation, not a full analyzer feature set.
 
 ## Purpose
 
@@ -23,16 +23,28 @@ The service will not own:
 
 ## Current Status
 
-This scaffold currently provides:
+This subtree currently provides:
 
 - project directory structure
 - configuration module
-- health endpoint
+- real `GET /health`
 - analyzer request/response models
-- placeholder `POST /analyze` endpoint
-- parser and service layer placeholders
+- real `POST /analyze` happy path for `source.type=directory`
+- structured error handling for unsupported source types and missing directories
+- parser and service layer implementation for the current migrated parser scope
 
-The actual analyze business logic is intentionally not implemented yet.
+Current implemented parser coverage:
+
+- `system_info`
+- `systemctl_status`
+- `docker_ps`
+
+Still intentionally out of scope:
+
+- archive upload
+- asynchronous jobs
+- persistence
+- parser expansion beyond the current migrated coverage
 
 ## Recommended Structure
 
@@ -69,6 +81,7 @@ log-analyzer-service/
 
 - define versioned analyzer request and response models
 - define health response models
+- define analyzer-local unified JSON models
 - keep analyzer-side contract models independent from platform internal imports
 
 ### `app/services/`
@@ -121,12 +134,13 @@ Phase 3:
 
 - expand collectors and parser coverage only after the standalone boundary is stable
 
-## Minimal Test Set For The First Real Implementation
+## Current Minimal Test Set
 
 - `GET /health` returns `200`
 - `POST /analyze` returns a valid `analyze-response/v1`
 - nonexistent directory returns structured error
 - unsupported `source.type` returns structured error
+- parser crash path returns `analyzer_internal_error`
 - successful responses validate as `AnalyzeResponseV1`
 
 ## Contract Reference

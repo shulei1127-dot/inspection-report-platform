@@ -1,11 +1,13 @@
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.schemas.unified_json import UnifiedJsonV1
+
 
 class AnalyzeDirectorySource(BaseModel):
-    type: Literal["directory"] = "directory"
-    path: str
+    type: str = "directory"
+    path: str | None = None
 
 
 class AnalyzeRequestV1(BaseModel):
@@ -31,7 +33,7 @@ class AnalyzeResponseV1(BaseModel):
     analysis_finished_at: str
     warnings: list[str] = Field(default_factory=list)
     input_summary: AnalyzeInputSummary | None = None
-    result: dict[str, Any]
+    result: UnifiedJsonV1
 
 
 class ErrorBody(BaseModel):
