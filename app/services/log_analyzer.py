@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from app.core.config import get_settings
 from app.schemas.log_analyzer import (
+    AnalyzeErrorResponse,
     AnalyzeInputSummary,
     AnalyzeRequestV1,
     AnalyzeResponseV1,
@@ -115,15 +116,7 @@ class RemoteLogAnalyzer:
             ) from exc
 
         if response.status_code != 200:
-            raise LogAnalyzerError(
-                code="analyzer_request_failed",
-                message="Analyzer service returned a non-success response.",
-                details={
-                    "analyzer_base_url": self.base_url,
-                    "status_code": response.status_code,
-                    "response_excerpt": response.text[:300] or None,
-                },
-            )
+            raise self._error_from_response(response)
 
         try:
             return AnalyzeResponseV1.model_validate(response.json())
@@ -133,6 +126,38 @@ class RemoteLogAnalyzer:
                 message="Analyzer response did not match the expected contract.",
                 details={"analyzer_base_url": self.base_url},
             ) from exc
+
+    def _error_from_response(self, response: httpx.Response) -> LogAnalyzerError:
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = None
+
+        if isinstance(payload, dict):
+            try:
+                error_response = AnalyzeErrorResponse.model_validate(payload)
+            except ValidationError:
+                error_response = None
+            else:
+                details = dict(error_response.error.details)
+                details.setdefault("analyzer_base_url", self.base_url)
+                details.setdefault("status_code", response.status_code)
+                return LogAnalyzerError(
+                    code=error_response.error.code,
+                    message=error_response.error.message,
+                    details=details,
+                )
+
+        return LogAnalyzerError(
+            code="analyzer_request_failed",
+            message="Analyzer service returned a non-success response.",
+            details={
+                "analyzer_base_url": self.base_url,
+                "status_code": response.status_code,
+                "content_type": response.headers.get("content-type"),
+                "response_excerpt": response.text[:300] or None,
+            },
+        )
 
 
 def build_log_analyzer() -> LogAnalyzer:

@@ -220,6 +220,7 @@ def test_get_task_prefers_database_record_when_available(
         report_file_path=None,
         error_code="extract_failed",
         error_message="synthetic failure for database-priority test",
+        error_details='{"filename":"bundle.zip","reason":"synthetic"}',
     )
 
     response = client.get(f"/api/tasks/{task_id}")
@@ -229,6 +230,14 @@ def test_get_task_prefers_database_record_when_available(
     assert payload["data"]["task_id"] == task_id
     assert payload["data"]["status"] == "analyze_failed"
     assert payload["data"]["created_at"] == "2026-04-12T08:08:08Z"
+    assert payload["data"]["error"] == {
+        "code": "extract_failed",
+        "message": "synthetic failure for database-priority test",
+        "details": {
+            "filename": "bundle.zip",
+            "reason": "synthetic",
+        },
+    }
     assert payload["data"]["summary"] == {
         "service_count": 1,
         "container_count": 1,
@@ -790,6 +799,9 @@ def test_create_task_marks_analyze_failed_when_analyzer_abstraction_errors(
     assert task_row["status"] == "analyze_failed"
     assert task_row["unified_json_path"] is None
     assert task_row["report_payload_path"] is None
+    assert json.loads(task_row["error_details"]) == {
+        "analyzer_base_url": "http://127.0.0.1:8090",
+    }
     assert (tmp_path / "uploads" / f"{task_id}.zip").exists()
     assert (tmp_path / "workdir" / task_id / "logs" / "system.log").exists()
 
@@ -830,6 +842,7 @@ def test_create_task_returns_render_failed_when_optional_render_attempt_fails(
     assert task_row["status"] == "render_failed"
     assert task_row["error_code"] == "carbone_unreachable"
     assert task_row["report_payload_path"] == f"workdir/{task_id}/report_payload.json"
+    assert task_row["error_details"] is None
 
 
 def test_create_task_remote_mode_happy_path_uses_remote_analyzer(
@@ -922,6 +935,97 @@ def test_create_task_remote_mode_marks_analyze_failed_when_analyzer_is_unreachab
     assert task_row is not None
     assert task_row["status"] == "analyze_failed"
     assert task_row["error_code"] == "analyzer_unavailable"
+    assert json.loads(task_row["error_details"]) == {
+        "analyzer_base_url": "http://127.0.0.1:8090",
+    }
+
+
+def test_create_task_remote_mode_preserves_structured_unsupported_source_error(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("ANALYZER_MODE", "remote")
+    monkeypatch.setenv("ANALYZER_BASE_URL", "http://analyzer.local")
+
+    def fake_send_request(self, request):  # noqa: ANN001, ARG001
+        raise LogAnalyzerError(
+            code="unsupported_source_type",
+            message="Only directory source is supported in analyze-request/v1.",
+            details={
+                "source_type": "archive",
+                "status_code": 400,
+                "analyzer_base_url": "http://analyzer.local",
+            },
+        )
+
+    monkeypatch.setattr(RemoteLogAnalyzer, "_send_request", fake_send_request)
+
+    response = client.post(
+        "/api/tasks",
+        files={"file": ("bundle.zip", _build_zip_bytes({"file.txt": "ok\n"}), "application/zip")},
+        data={"parser_profile": "default", "report_lang": "zh-CN"},
+    )
+
+    assert response.status_code == 503
+    payload = response.json()
+    assert payload["error"]["code"] == "unsupported_source_type"
+    assert payload["error"]["details"]["source_type"] == "archive"
+
+    task_id = payload["error"]["details"]["task_id"]
+    task_row = _fetch_task_db_row(tmp_path, task_id)
+    assert task_row is not None
+    assert task_row["status"] == "analyze_failed"
+    assert task_row["error_code"] == "unsupported_source_type"
+    assert task_row["error_message"] == "Only directory source is supported in analyze-request/v1."
+    assert json.loads(task_row["error_details"]) == {
+        "analyzer_base_url": "http://analyzer.local",
+        "source_type": "archive",
+        "status_code": 400,
+    }
+
+
+def test_create_task_remote_mode_preserves_structured_source_not_found_error(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("ANALYZER_MODE", "remote")
+    monkeypatch.setenv("ANALYZER_BASE_URL", "http://analyzer.local")
+
+    def fake_send_request(self, request):  # noqa: ANN001, ARG001
+        raise LogAnalyzerError(
+            code="source_not_found",
+            message="Requested source directory does not exist.",
+            details={
+                "path": "/tmp/missing",
+                "status_code": 404,
+                "analyzer_base_url": "http://analyzer.local",
+            },
+        )
+
+    monkeypatch.setattr(RemoteLogAnalyzer, "_send_request", fake_send_request)
+
+    response = client.post(
+        "/api/tasks",
+        files={"file": ("bundle.zip", _build_zip_bytes({"file.txt": "ok\n"}), "application/zip")},
+        data={"parser_profile": "default", "report_lang": "zh-CN"},
+    )
+
+    assert response.status_code == 503
+    payload = response.json()
+    assert payload["error"]["code"] == "source_not_found"
+    assert payload["error"]["details"]["path"] == "/tmp/missing"
+
+    task_id = payload["error"]["details"]["task_id"]
+    task_row = _fetch_task_db_row(tmp_path, task_id)
+    assert task_row is not None
+    assert task_row["error_code"] == "source_not_found"
+    assert json.loads(task_row["error_details"]) == {
+        "analyzer_base_url": "http://analyzer.local",
+        "path": "/tmp/missing",
+        "status_code": 404,
+    }
 
 
 def test_create_task_remote_mode_marks_analyze_failed_when_analyzer_response_is_invalid(
@@ -956,6 +1060,52 @@ def test_create_task_remote_mode_marks_analyze_failed_when_analyzer_response_is_
     assert task_row is not None
     assert task_row["status"] == "analyze_failed"
     assert task_row["error_code"] == "analyzer_invalid_response"
+
+
+def test_create_task_remote_mode_falls_back_to_stable_error_for_non_json_analyzer_500(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("ANALYZER_MODE", "remote")
+    monkeypatch.setenv("ANALYZER_BASE_URL", "http://analyzer.local")
+
+    def fake_send_request(self, request):  # noqa: ANN001, ARG001
+        raise LogAnalyzerError(
+            code="analyzer_request_failed",
+            message="Analyzer service returned a non-success response.",
+            details={
+                "analyzer_base_url": "http://analyzer.local",
+                "status_code": 500,
+                "content_type": "text/plain",
+                "response_excerpt": "plain 500 body",
+            },
+        )
+
+    monkeypatch.setattr(RemoteLogAnalyzer, "_send_request", fake_send_request)
+
+    response = client.post(
+        "/api/tasks",
+        files={"file": ("bundle.zip", _build_zip_bytes({"file.txt": "ok\n"}), "application/zip")},
+        data={"parser_profile": "default", "report_lang": "zh-CN"},
+    )
+
+    assert response.status_code == 503
+    payload = response.json()
+    assert payload["error"]["code"] == "analyzer_request_failed"
+    assert payload["error"]["details"]["status_code"] == 500
+    assert payload["error"]["details"]["content_type"] == "text/plain"
+
+    task_id = payload["error"]["details"]["task_id"]
+    task_row = _fetch_task_db_row(tmp_path, task_id)
+    assert task_row is not None
+    assert task_row["error_code"] == "analyzer_request_failed"
+    assert json.loads(task_row["error_details"]) == {
+        "analyzer_base_url": "http://analyzer.local",
+        "content_type": "text/plain",
+        "response_excerpt": "plain 500 body",
+        "status_code": 500,
+    }
 
 
 def test_create_task_rejects_non_zip_file(tmp_path: Path, monkeypatch) -> None:
@@ -1147,7 +1297,8 @@ def _fetch_task_db_row(root_dir: Path, task_id: str) -> sqlite3.Row | None:
                 report_payload_path,
                 report_file_path,
                 error_code,
-                error_message
+                error_message,
+                error_details
             FROM tasks
             WHERE task_id = ?
             """,
@@ -1171,6 +1322,7 @@ def _write_task_db_row(
     report_file_path: str | None,
     error_code: str | None = None,
     error_message: str | None = None,
+    error_details: str | None = None,
 ) -> None:
     db_path = root_dir / "tasks.sqlite3"
     connection = sqlite3.connect(db_path)
@@ -1188,7 +1340,8 @@ def _write_task_db_row(
                 report_payload_path TEXT,
                 report_file_path TEXT,
                 error_code TEXT,
-                error_message TEXT
+                error_message TEXT,
+                error_details TEXT
             )
             """
         )
@@ -1205,9 +1358,10 @@ def _write_task_db_row(
                 report_payload_path,
                 report_file_path,
                 error_code,
-                error_message
+                error_message,
+                error_details
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 task_id,
@@ -1221,6 +1375,7 @@ def _write_task_db_row(
                 report_file_path,
                 error_code,
                 error_message,
+                error_details,
             ),
         )
         connection.commit()

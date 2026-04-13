@@ -34,3 +34,14 @@ class AnalyzeResponseV1(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     input_summary: AnalyzeInputSummary | None = None
     result: UnifiedJsonV1
+
+
+class AnalyzeErrorBody(BaseModel):
+    code: str
+    message: str
+    details: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
+
+
+class AnalyzeErrorResponse(BaseModel):
+    success: Literal[False] = False
+    error: AnalyzeErrorBody

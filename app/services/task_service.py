@@ -3,6 +3,7 @@ import tarfile
 import uuid
 import zipfile
 from datetime import UTC, datetime, timedelta
+import json
 from json import JSONDecodeError
 from pathlib import Path
 
@@ -153,6 +154,7 @@ def create_task_from_upload(upload: UploadFile | None, options: TaskCreateOption
             unified_json_path=unified_json_path.as_posix(),
             error_code=None,
             error_message=None,
+            error_details=None,
         )
         report_payload = map_unified_json_to_report_payload(
             unified_json,
@@ -167,6 +169,7 @@ def create_task_from_upload(upload: UploadFile | None, options: TaskCreateOption
             report_file_path=None,
             error_code=None,
             error_message=None,
+            error_details=None,
         )
         render_result = maybe_render_report_from_payload_file(
             task_id,
@@ -185,6 +188,7 @@ def create_task_from_upload(upload: UploadFile | None, options: TaskCreateOption
             status="analyze_failed",
             error_code=exc.code,
             error_message=exc.message,
+            error_details=_serialize_error_details(exc.details),
         )
         raise TaskUploadError(
             status_code=503,
@@ -202,6 +206,7 @@ def create_task_from_upload(upload: UploadFile | None, options: TaskCreateOption
             report_file_path=None,
             error_code=exc.code,
             error_message=exc.message,
+            error_details=_serialize_error_details(exc.details),
         )
         exc.details.setdefault("task_id", task_id)
         raise
@@ -215,6 +220,9 @@ def create_task_from_upload(upload: UploadFile | None, options: TaskCreateOption
             report_file_path=None,
             error_code="internal_error",
             error_message="Failed to persist the uploaded task files.",
+            error_details=_serialize_error_details(
+                {"filename": filename, "reason": str(exc), "task_id": task_id}
+            ),
         )
         raise TaskUploadError(
             status_code=500,
@@ -282,6 +290,7 @@ def get_task_result(task_id: str) -> TaskResultData:
             else None
         ),
         summary=summary,
+        error=None,
     )
 
 
@@ -693,6 +702,7 @@ def _task_result_from_record(task_record: TaskRecord) -> TaskResultData:
         report_payload_path=task_record.report_payload_path,
         report_file_path=task_record.report_file_path,
         summary=summary,
+        error=_task_error_from_record(task_record),
     )
 
 
@@ -704,6 +714,7 @@ def _record_render_result(task_id: str, render_result: ReportRenderResult) -> No
             report_file_path=render_result.output_path.as_posix(),
             error_code=None,
             error_message=None,
+            error_details=None,
         )
         return
 
@@ -713,6 +724,7 @@ def _record_render_result(task_id: str, render_result: ReportRenderResult) -> No
             status="render_failed",
             error_code=render_result.error_code,
             error_message=render_result.error_message,
+            error_details=_serialize_error_details(render_result.details),
         )
 
 
@@ -734,6 +746,46 @@ def _parse_iso_datetime(value: str | None) -> datetime | None:
 
 def _utc_now() -> datetime:
     return datetime.now(UTC)
+
+
+def _task_error_from_record(task_record: TaskRecord) -> TaskError | None:
+    if task_record.error_code is None and task_record.error_message is None:
+        return None
+
+    return TaskError(
+        code=task_record.error_code or "unknown_error",
+        message=task_record.error_message or "Task failed.",
+        details=_deserialize_error_details(task_record.error_details),
+    )
+
+
+def _serialize_error_details(
+    details: dict[str, str | int | float | bool | None] | None,
+) -> str | None:
+    if not details:
+        return None
+    return json.dumps(details, sort_keys=True)
+
+
+def _deserialize_error_details(
+    value: str | None,
+) -> dict[str, str | int | float | bool | None]:
+    if not value:
+        return {}
+
+    try:
+        payload = json.loads(value)
+    except (TypeError, ValueError):
+        return {}
+
+    if not isinstance(payload, dict):
+        return {}
+
+    return {
+        str(key): item
+        for key, item in payload.items()
+        if isinstance(item, (str, int, float, bool)) or item is None
+    }
 
 
 def _detect_archive_suffix(filename: str) -> str | None:

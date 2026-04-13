@@ -18,6 +18,7 @@ class TaskRecord:
     report_file_path: str | None
     error_code: str | None
     error_message: str | None
+    error_details: str | None
 
 
 def create_task_record(
@@ -31,6 +32,7 @@ def create_task_record(
     report_file_path: str | None = None,
     error_code: str | None = None,
     error_message: str | None = None,
+    error_details: str | None = None,
 ) -> TaskRecord:
     timestamp = _utc_now_iso()
 
@@ -48,9 +50,10 @@ def create_task_record(
                 report_payload_path,
                 report_file_path,
                 error_code,
-                error_message
+                error_message,
+                error_details
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 task_id,
@@ -64,6 +67,7 @@ def create_task_record(
                 report_file_path,
                 error_code,
                 error_message,
+                error_details,
             ),
         )
 
@@ -106,7 +110,8 @@ def get_task_record(task_id: str) -> TaskRecord | None:
                 report_payload_path,
                 report_file_path,
                 error_code,
-                error_message
+                error_message,
+                error_details
             FROM tasks
             WHERE task_id = ?
             """,
@@ -134,7 +139,8 @@ def list_task_records() -> list[TaskRecord]:
                 report_payload_path,
                 report_file_path,
                 error_code,
-                error_message
+                error_message,
+                error_details
             FROM tasks
             ORDER BY created_at DESC, task_id DESC
             """
@@ -171,10 +177,12 @@ def _connect() -> sqlite3.Connection:
             report_payload_path TEXT,
             report_file_path TEXT,
             error_code TEXT,
-            error_message TEXT
+            error_message TEXT,
+            error_details TEXT
         )
         """
     )
+    _ensure_column(connection, "tasks", "error_details", "TEXT")
     return connection
 
 
@@ -191,8 +199,25 @@ def _row_to_task_record(row: sqlite3.Row) -> TaskRecord:
         report_file_path=row["report_file_path"],
         error_code=row["error_code"],
         error_message=row["error_message"],
+        error_details=row["error_details"],
     )
 
 
 def _utc_now_iso() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _ensure_column(
+    connection: sqlite3.Connection,
+    table_name: str,
+    column_name: str,
+    column_definition: str,
+) -> None:
+    rows = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+    existing_columns = {row["name"] for row in rows}
+    if column_name in existing_columns:
+        return
+
+    connection.execute(
+        f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}"
+    )

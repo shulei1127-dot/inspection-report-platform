@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Literal, TypeAlias
 
 from pydantic import BaseModel, Field, model_validator
@@ -65,6 +67,7 @@ class TaskResultData(BaseModel):
     report_payload_path: str | None = None
     report_file_path: str | None = None
     summary: TaskSummary = Field(default_factory=TaskSummary)
+    error: "TaskError | None" = None
 
 
 class TaskResultSuccessResponse(BaseModel):

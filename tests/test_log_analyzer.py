@@ -163,6 +163,66 @@ def test_remote_log_analyzer_rejects_invalid_contract_response() -> None:
     assert exc_info.value.code == "analyzer_invalid_response"
 
 
+def test_remote_log_analyzer_preserves_structured_json_errors_from_analyzer() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:  # noqa: ARG001
+        return httpx.Response(
+            404,
+            json={
+                "success": False,
+                "error": {
+                    "code": "source_not_found",
+                    "message": "Requested source directory does not exist.",
+                    "details": {"path": "/tmp/missing"},
+                },
+            },
+        )
+
+    analyzer = RemoteLogAnalyzer(
+        base_url="http://analyzer.local",
+        timeout_seconds=1,
+        transport=httpx.MockTransport(handler),
+    )
+    request = AnalyzeRequestV1(
+        task_id="tsk_remote_contract_003",
+        source=AnalyzeDirectorySource(path="/tmp/task-3"),
+    )
+
+    with pytest.raises(LogAnalyzerError) as exc_info:
+        analyzer.analyze(request)
+
+    assert exc_info.value.code == "source_not_found"
+    assert exc_info.value.message == "Requested source directory does not exist."
+    assert exc_info.value.details["path"] == "/tmp/missing"
+    assert exc_info.value.details["status_code"] == 404
+
+
+def test_remote_log_analyzer_falls_back_for_non_json_error_responses() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:  # noqa: ARG001
+        return httpx.Response(
+            500,
+            text="upstream exploded in plain text",
+            headers={"content-type": "text/plain"},
+        )
+
+    analyzer = RemoteLogAnalyzer(
+        base_url="http://analyzer.local",
+        timeout_seconds=1,
+        transport=httpx.MockTransport(handler),
+    )
+    request = AnalyzeRequestV1(
+        task_id="tsk_remote_contract_004",
+        source=AnalyzeDirectorySource(path="/tmp/task-4"),
+    )
+
+    with pytest.raises(LogAnalyzerError) as exc_info:
+        analyzer.analyze(request)
+
+    assert exc_info.value.code == "analyzer_request_failed"
+    assert exc_info.value.details["status_code"] == 500
+    assert exc_info.value.details["content_type"] == "text/plain"
+    assert "upstream exploded" in str(exc_info.value.details["response_excerpt"])
+
+
 def _write_supported_bundle(root_dir: Path) -> None:
     system_dir = root_dir / "system"
     container_dir = root_dir / "containers"

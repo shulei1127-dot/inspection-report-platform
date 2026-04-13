@@ -139,6 +139,7 @@ Expected remote-flow result:
 - platform persists `workdir/{task_id}/unified.json`
 - platform persists `workdir/{task_id}/report_payload.json`
 - task status becomes `completed` or `rendered`
+- analyzer non-200 JSON errors are now preserved as analyzer-native `code` / `message` / `details` in platform failure responses and task records
 
 If Carbone is available, the rendered report flow remains unchanged:
 
