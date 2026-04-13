@@ -36,7 +36,7 @@ The current implementation is intentionally limited to the bootstrap MVP.
 
 ## Planned Near-Term Flow
 
-1. Client uploads a zip log package to `POST /api/tasks`
+1. Client uploads a supported log archive to `POST /api/tasks`
 2. Platform stores the package in `uploads/`
 3. Platform extracts the package to `workdir/{task_id}/`
 4. Platform returns task metadata
@@ -45,7 +45,7 @@ The current implementation is intentionally limited to the bootstrap MVP.
 
 ## Storage Strategy
 
-- `uploads/`: raw uploaded zip files
+- `uploads/`: raw uploaded archive files
 - `workdir/`: extracted and task-scoped working directories
 - `outputs/`: generated artifacts and future report outputs
 

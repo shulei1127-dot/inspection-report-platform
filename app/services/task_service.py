@@ -1,4 +1,5 @@
 import shutil
+import tarfile
 import uuid
 import zipfile
 from datetime import UTC, datetime, timedelta
@@ -106,17 +107,18 @@ def create_task_from_upload(upload: UploadFile | None, options: TaskCreateOption
             message="No upload file was provided.",
         )
 
-    if not filename.lower().endswith(".zip"):
+    archive_suffix = _detect_archive_suffix(filename)
+    if archive_suffix is None:
         raise TaskUploadError(
             status_code=415,
             code="unsupported_media_type",
-            message="Only .zip files are accepted.",
+            message="Only .zip, .tar.gz, and .tgz files are accepted.",
             details={"filename": filename},
         )
 
     settings = get_settings()
     task_id = generate_task_id()
-    zip_path = settings.uploads_dir / f"{task_id}.zip"
+    archive_path = settings.uploads_dir / f"{task_id}{archive_suffix}"
     task_workdir = settings.workdir_dir / task_id
     unified_json_path = task_workdir / "unified.json"
     report_payload_path = task_workdir / "report_payload.json"
@@ -127,19 +129,19 @@ def create_task_from_upload(upload: UploadFile | None, options: TaskCreateOption
     create_task_record(
         task_id=task_id,
         status="processing",
-        archive_path=zip_path.as_posix(),
+        archive_path=archive_path.as_posix(),
         workdir_path=task_workdir.as_posix(),
     )
 
     try:
-        _save_upload(upload, zip_path)
-        _validate_zip_file(zip_path, filename)
-        _extract_zip_archive(zip_path, task_workdir, filename)
+        _save_upload(upload, archive_path)
+        _validate_archive_file(archive_path, filename, archive_suffix=archive_suffix)
+        _extract_archive(archive_path, task_workdir, filename, archive_suffix=archive_suffix)
         unified_json = build_unified_json(
             task_id,
             task_workdir,
             archive_name=filename,
-            archive_size_bytes=zip_path.stat().st_size,
+            archive_size_bytes=archive_path.stat().st_size,
         )
         persist_unified_json(unified_json, unified_json_path)
         update_task_record(
@@ -170,7 +172,7 @@ def create_task_from_upload(upload: UploadFile | None, options: TaskCreateOption
             report_file_path = render_result.output_path.as_posix()
         _record_render_result(task_id, render_result)
     except TaskUploadError as exc:
-        _cleanup_failed_task(zip_path, task_workdir)
+        _cleanup_failed_task(archive_path, task_workdir)
         update_task_record(
             task_id,
             status="failed",
@@ -182,7 +184,7 @@ def create_task_from_upload(upload: UploadFile | None, options: TaskCreateOption
         )
         raise
     except OSError as exc:
-        _cleanup_failed_task(zip_path, task_workdir)
+        _cleanup_failed_task(archive_path, task_workdir)
         update_task_record(
             task_id,
             status="failed",
@@ -205,7 +207,7 @@ def create_task_from_upload(upload: UploadFile | None, options: TaskCreateOption
         filename=filename,
         parser_profile=options.parser_profile,
         report_lang=options.report_lang,
-        stored_zip_path=zip_path.as_posix(),
+        stored_zip_path=archive_path.as_posix(),
         workdir_path=task_workdir.as_posix(),
         unified_json_path=unified_json_path.as_posix(),
         report_payload_path=report_payload_path.as_posix(),
@@ -387,21 +389,50 @@ def _save_upload(upload: UploadFile, target_path: Path) -> None:
     upload.file.seek(0)
 
 
-def _validate_zip_file(zip_path: Path, filename: str) -> None:
-    if not zipfile.is_zipfile(zip_path):
+def _validate_archive_file(
+    archive_path: Path,
+    filename: str,
+    *,
+    archive_suffix: str,
+) -> None:
+    if archive_suffix == ".zip":
+        if not zipfile.is_zipfile(archive_path):
+            raise TaskUploadError(
+                status_code=400,
+                code="invalid_archive",
+                message="The uploaded file is not a valid supported archive.",
+                details={"filename": filename},
+            )
+        return
+
+    if not tarfile.is_tarfile(archive_path):
         raise TaskUploadError(
             status_code=400,
-            code="invalid_zip",
-            message="The uploaded file is not a valid zip archive.",
+            code="invalid_archive",
+            message="The uploaded file is not a valid supported archive.",
             details={"filename": filename},
         )
 
 
-def _extract_zip_archive(zip_path: Path, target_dir: Path, filename: str) -> None:
+def _extract_archive(
+    archive_path: Path,
+    target_dir: Path,
+    filename: str,
+    *,
+    archive_suffix: str,
+) -> None:
+    if archive_suffix == ".zip":
+        _extract_zip_archive(archive_path, target_dir, filename)
+        return
+
+    _extract_tar_archive(archive_path, target_dir, filename)
+
+
+def _extract_zip_archive(archive_path: Path, target_dir: Path, filename: str) -> None:
     root = target_dir.resolve()
 
     try:
-        with zipfile.ZipFile(zip_path) as archive:
+        with zipfile.ZipFile(archive_path) as archive:
             for member in archive.infolist():
                 destination = (target_dir / member.filename).resolve()
                 if destination != root and root not in destination.parents:
@@ -418,22 +449,56 @@ def _extract_zip_archive(zip_path: Path, target_dir: Path, filename: str) -> Non
     except zipfile.BadZipFile as exc:
         raise TaskUploadError(
             status_code=400,
-            code="invalid_zip",
-            message="The uploaded file is not a valid zip archive.",
+            code="invalid_archive",
+            message="The uploaded file is not a valid supported archive.",
             details={"filename": filename},
         ) from exc
     except OSError as exc:
         raise TaskUploadError(
             status_code=500,
             code="extract_failed",
-            message="Failed to extract the uploaded zip archive.",
+            message="Failed to extract the uploaded archive.",
             details={"filename": filename, "reason": str(exc)},
         ) from exc
 
 
-def _cleanup_failed_task(zip_path: Path, task_workdir: Path) -> None:
-    if zip_path.exists():
-        zip_path.unlink()
+def _extract_tar_archive(archive_path: Path, target_dir: Path, filename: str) -> None:
+    root = target_dir.resolve()
+
+    try:
+        with tarfile.open(archive_path, "r:*") as archive:
+            for member in archive.getmembers():
+                destination = (target_dir / member.name).resolve()
+                if destination != root and root not in destination.parents:
+                    raise TaskUploadError(
+                        status_code=500,
+                        code="extract_failed",
+                        message="Failed to extract the uploaded archive.",
+                        details={"filename": filename, "reason": "unsafe_archive_path"},
+                    )
+
+            archive.extractall(target_dir, filter="data")
+    except TaskUploadError:
+        raise
+    except tarfile.TarError as exc:
+        raise TaskUploadError(
+            status_code=400,
+            code="invalid_archive",
+            message="The uploaded file is not a valid supported archive.",
+            details={"filename": filename},
+        ) from exc
+    except OSError as exc:
+        raise TaskUploadError(
+            status_code=500,
+            code="extract_failed",
+            message="Failed to extract the uploaded archive.",
+            details={"filename": filename, "reason": str(exc)},
+        ) from exc
+
+
+def _cleanup_failed_task(archive_path: Path, task_workdir: Path) -> None:
+    if archive_path.exists():
+        archive_path.unlink()
     if task_workdir.exists():
         shutil.rmtree(task_workdir)
 
@@ -469,11 +534,12 @@ def _resolve_task_paths(
     )
     resolved_task_workdir = task_workdir or settings.workdir_dir / task_id
     resolved_outputs_task_dir = outputs_task_dir or settings.outputs_dir / task_id
+    fallback_archive_path = _find_fallback_archive_path(task_id, uploads_dir=settings.uploads_dir)
     return {
         "stored_zip_path": (
             _path_from_record(task_record.archive_path)
             if task_record is not None and task_record.archive_path is not None
-            else settings.uploads_dir / f"{task_id}.zip"
+            else fallback_archive_path
         ),
         "task_workdir": resolved_task_workdir,
         "unified_json_path": (
@@ -562,8 +628,11 @@ def _discover_task_ids(
     task_ids: set[str] = set()
 
     if uploads_dir.exists():
-        for path in uploads_dir.glob("tsk_*.zip"):
-            task_ids.add(path.stem)
+        for path in uploads_dir.iterdir():
+            if path.is_file():
+                task_id = _task_id_from_archive_name(path.name)
+                if task_id is not None:
+                    task_ids.add(task_id)
 
     if workdir_dir.exists():
         for path in workdir_dir.iterdir():
@@ -643,3 +712,32 @@ def _parse_iso_datetime(value: str | None) -> datetime | None:
 
 def _utc_now() -> datetime:
     return datetime.now(UTC)
+
+
+def _detect_archive_suffix(filename: str) -> str | None:
+    lowered = filename.lower()
+    for suffix in (".tar.gz", ".tgz", ".zip"):
+        if lowered.endswith(suffix):
+            return suffix
+    return None
+
+
+def _task_id_from_archive_name(filename: str) -> str | None:
+    archive_suffix = _detect_archive_suffix(filename)
+    if archive_suffix is None:
+        return None
+
+    task_id = filename[: -len(archive_suffix)]
+    if not task_id.startswith("tsk_"):
+        return None
+
+    return task_id
+
+
+def _find_fallback_archive_path(task_id: str, *, uploads_dir: Path) -> Path:
+    for suffix in (".zip", ".tar.gz", ".tgz"):
+        candidate = uploads_dir / f"{task_id}{suffix}"
+        if candidate.exists():
+            return candidate
+
+    return uploads_dir / f"{task_id}.zip"

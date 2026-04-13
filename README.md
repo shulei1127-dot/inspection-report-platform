@@ -7,7 +7,7 @@ This repository currently contains the MVP bootstrap:
 - `GET /health` health check
 - Project conventions and baseline documentation
 
-The upload task flow (`POST /api/tasks`) is planned for the next iteration and is intentionally not included in this scope.
+The upload task flow (`POST /api/tasks`) now accepts supported log archives and drives the current MVP pipeline.
 
 ## Project Structure
 
@@ -74,6 +74,12 @@ TASKS_DB_PATH=tasks.sqlite3
 
 If unset, task records are stored in `./tasks.sqlite3`.
 
+Supported upload archive formats:
+
+- `.zip`
+- `.tar.gz`
+- `.tgz`
+
 ## Carbone Runtime
 
 The repository now includes a real HTTP-based Carbone adapter and a dedicated render endpoint:
@@ -137,7 +143,7 @@ The script:
 - starts a local Carbone container from the cached official image
 - waits for `GET /status`
 - starts the FastAPI app on a temporary port
-- uploads a small zip file through `POST /api/tasks`
+- uploads a small archive through `POST /api/tasks`
 - calls `POST /api/tasks/{task_id}/render-report`
 - verifies that `outputs/{task_id}/report.docx` exists and is a valid DOCX
 
@@ -153,7 +159,7 @@ APP_HOST=127.0.0.1 APP_PORT=8012 CARBONE_BASE_URL=http://127.0.0.1:4000 \
 
 Then:
 
-1. upload a zip with `POST /api/tasks`
+1. upload a supported archive with `POST /api/tasks`
 2. confirm `workdir/{task_id}/report_payload.json` exists
 3. call `POST /api/tasks/{task_id}/render-report`
 4. confirm `outputs/{task_id}/report.docx` exists and opens as a DOCX file
@@ -164,7 +170,7 @@ The current parser support is now formalized in:
 
 - `docs/input_bundle_spec_v1.md`
 
-Recommended zip layout:
+Recommended archive layout after extraction:
 
 ```text
 <bundle-root>/

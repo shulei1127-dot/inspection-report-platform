@@ -3,7 +3,7 @@
 ## Goal
 
 `inspection-report-platform` currently supports a small, fixed set of input
-files. This document makes that support explicit so uploaded zip files can be
+files. This document makes that support explicit so uploaded archives can be
 prepared in a predictable way.
 
 This v1 spec is intentionally narrow:
@@ -15,9 +15,17 @@ This v1 spec is intentionally narrow:
 
 It does **not** try to cover every Linux collection style.
 
-## Recommended Zip Layout
+## Supported Archive Formats
 
-After extraction, the zip should look like this:
+Current accepted upload formats:
+
+- `.zip`
+- `.tar.gz`
+- `.tgz`
+
+## Recommended Extracted Layout
+
+After extraction, the archive should look like this:
 
 ```text
 <bundle-root>/

@@ -1,6 +1,7 @@
 import io
 import json
 import sqlite3
+import tarfile
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
@@ -53,6 +54,56 @@ def test_get_task_returns_minimal_result_for_existing_task(
     assert payload["data"]["report_payload_path"] == f"workdir/{task_id}/report_payload.json"
     assert payload["data"]["report_file_path"] is None
     assert payload["data"]["summary"]["issue_count"] == 4
+
+
+def test_create_task_accepts_tar_gz_archive_and_extracts_supported_files(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    tar_gz_bytes = _build_tar_gz_bytes(
+        {
+            "system/system_info": (
+                'hostname=tar-host\nPRETTY_NAME="Ubuntu 24.04 LTS"\n'
+                "kernel=6.8.0\ntimezone=UTC\nuptime=7200\nip=10.0.0.21\n"
+                "last_boot_at=2026-04-12T00:00:00Z\n"
+            ),
+            "system/systemctl_status": (
+                "UNIT LOAD ACTIVE SUB DESCRIPTION\n"
+                "nginx.service loaded active running A high performance web server\n"
+            ),
+            "containers/docker_ps": (
+                "NAMES\tIMAGE\tSTATUS\tPORTS\n"
+                "api\tnginx:1.27\tUp 15 minutes\t0.0.0.0:8080->80/tcp\n"
+            ),
+        }
+    )
+
+    response = client.post(
+        "/api/tasks",
+        files={"file": ("host-a-inspection.tar.gz", tar_gz_bytes, "application/gzip")},
+        data={"parser_profile": "default", "report_lang": "zh-CN"},
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    task_id = payload["data"]["task_id"]
+    task_row = _fetch_task_db_row(tmp_path, task_id)
+    unified_json_path = tmp_path / "workdir" / task_id / "unified.json"
+
+    assert payload["data"]["filename"] == "host-a-inspection.tar.gz"
+    assert payload["data"]["stored_zip_path"] == f"uploads/{task_id}.tar.gz"
+    assert task_row is not None
+    assert task_row["archive_path"] == f"uploads/{task_id}.tar.gz"
+    assert (tmp_path / "uploads" / f"{task_id}.tar.gz").exists()
+
+    unified_json = UnifiedJsonV1.model_validate_json(
+        unified_json_path.read_text(encoding="utf-8")
+    )
+    assert unified_json.host_info.hostname == "tar-host"
+    assert unified_json.summary.service_count == 1
+    assert unified_json.summary.container_count == 1
 
 
 def test_list_tasks_returns_multiple_items_in_latest_first_order(
@@ -709,7 +760,7 @@ def test_create_task_rejects_non_zip_file(tmp_path: Path, monkeypatch) -> None:
         "success": False,
         "error": {
             "code": "unsupported_media_type",
-            "message": "Only .zip files are accepted.",
+            "message": "Only .zip, .tar.gz, and .tgz files are accepted.",
             "details": {
                 "filename": "notes.txt",
             },
@@ -742,6 +793,19 @@ def _build_zip_bytes(entries: dict[str, str]) -> bytes:
     with zipfile.ZipFile(buffer, "w") as archive:
         for name, content in entries.items():
             archive.writestr(name, content)
+
+    return buffer.getvalue()
+
+
+def _build_tar_gz_bytes(entries: dict[str, str]) -> bytes:
+    buffer = io.BytesIO()
+
+    with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+        for name, content in entries.items():
+            encoded = content.encode("utf-8")
+            tar_info = tarfile.TarInfo(name=name)
+            tar_info.size = len(encoded)
+            archive.addfile(tar_info, io.BytesIO(encoded))
 
     return buffer.getvalue()
 

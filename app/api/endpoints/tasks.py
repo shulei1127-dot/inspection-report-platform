@@ -35,7 +35,7 @@ router = APIRouter()
     "/api/tasks",
     response_model=TaskCreateSuccessResponse,
     status_code=201,
-    summary="Create an inspection task from a zip upload",
+    summary="Create an inspection task from a supported archive upload",
     responses={
         400: {"model": TaskErrorResponse},
         415: {"model": TaskErrorResponse},
