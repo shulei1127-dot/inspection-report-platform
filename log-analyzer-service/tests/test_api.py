@@ -48,6 +48,7 @@ def test_post_analyze_happy_path_returns_versioned_response(tmp_path: Path) -> N
 
     assert validated.response_version == "analyze-response/v1"
     assert validated.schema_version == "unified-json/v1"
+    assert validated.product_type == "unknown"
     assert validated.result.task_id == "tsk_analyzer_001"
     assert validated.result.host_info.hostname == "host-a"
     assert validated.result.summary.service_count == 1
@@ -185,6 +186,7 @@ def test_post_analyze_recognizes_xray_collector_input(tmp_path: Path) -> None:
     payload = response.json()
     validated = AnalyzeResponseV1.model_validate(payload)
 
+    assert validated.product_type == "xray"
     assert validated.result.task_id == "tsk_analyzer_xray_001"
     assert validated.result.parser is not None
     assert validated.result.parser.name == "xray-collector-parser"
@@ -207,6 +209,8 @@ def test_post_analyze_recognizes_xray_collector_input(tmp_path: Path) -> None:
     assert any(container.name == "xray-upgrader" for container in validated.result.containers)
     assert any(container.name == "xray-gunkit-base" for container in validated.result.containers)
     assert validated.result.metadata["collector_type"] == "xray-collector/v1"
+    assert validated.result.metadata["product_type"] == "xray"
+    assert validated.result.metadata["parser_route"] == "xray-collector-parser"
     assert any("xray-collector v1 input detected" in warning for warning in validated.warnings)
 
 

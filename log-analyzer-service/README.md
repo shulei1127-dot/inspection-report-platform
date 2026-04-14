@@ -40,6 +40,11 @@ Current implemented parser coverage:
 - `docker_ps`
 - `xray-collector v1` normalization into the canonical parser inputs
 
+Current analyzer-side product routing coverage:
+
+- `xray` -> `XrayCollectorParser`
+- `unknown` -> `LinuxDefaultParser`
+
 Still intentionally out of scope:
 
 - archive upload
@@ -154,6 +159,18 @@ Phase 2:
 Phase 3:
 
 - expand collectors and parser coverage only after the standalone boundary is stable
+
+## Product Routing v1
+
+The analyzer now owns a minimal `product_type` decision before parser execution.
+
+Current v1 values:
+
+- `xray`
+- `unknown`
+
+The analyzer returns that decision in `analyze-response/v1`, and also persists it
+in `result.metadata.product_type` together with `result.metadata.parser_route`.
 
 ## Current Minimal Test Set
 

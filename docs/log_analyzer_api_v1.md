@@ -200,6 +200,7 @@ Required:
 
 - `response_version`
 - `schema_version`
+- `product_type`
 - `analyzer_version`
 - `analysis_started_at`
 - `analysis_finished_at`
@@ -216,6 +217,7 @@ Optional:
 {
   "response_version": "analyze-response/v1",
   "schema_version": "unified-json/v1",
+  "product_type": "unknown",
   "analyzer_version": "0.1.0",
   "analysis_started_at": "2026-04-13T10:00:00Z",
   "analysis_finished_at": "2026-04-13T10:00:02Z",
@@ -280,6 +282,13 @@ Optional:
   }
 }
 ```
+
+`product_type` is the analyzer-side routing result for the requested source.
+
+Current v1 values:
+
+- `xray`
+- `unknown`
 
 ### Response Rules
 

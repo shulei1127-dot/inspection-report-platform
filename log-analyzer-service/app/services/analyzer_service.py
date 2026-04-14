@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
 from app.core.config import get_settings
-from app.parsers.linux_default_parser import LinuxDefaultParser
-from app.parsers.xray_collector_parser import XrayCollectorParser
 from app.schemas.analyze import (
     AnalyzeInputSummary,
     AnalyzeRequestV1,
     AnalyzeResponseV1,
 )
+from app.services.product_router import ProductRouter
 
 
 class AnalyzerServiceError(Exception):
@@ -34,14 +33,17 @@ class AnalyzerServiceError(Exception):
 class AnalyzerService:
     analyzer_version: str
     allow_directory_source: bool
+    product_router: ProductRouter = field(default_factory=ProductRouter)
 
     def analyze(self, request: AnalyzeRequestV1) -> AnalyzeResponseV1:
         analysis_started_at = _utc_now_iso()
         analysis_root = self._resolve_analysis_root(request)
+        routed_parser = self.product_router.route(analysis_root)
 
         try:
             file_count, directory_count = _scan_analysis_root(analysis_root)
             unified_json = self._parse_analysis_root(
+                routed_parser=routed_parser,
                 task_id=request.task_id,
                 analysis_root=analysis_root,
                 archive_name=request.archive_name,
@@ -59,6 +61,7 @@ class AnalyzerService:
 
         analysis_finished_at = _utc_now_iso()
         return AnalyzeResponseV1(
+            product_type=routed_parser.product_type,
             analyzer_version=self.analyzer_version,
             analysis_started_at=analysis_started_at,
             analysis_finished_at=analysis_finished_at,
@@ -121,26 +124,24 @@ class AnalyzerService:
     def _parse_analysis_root(
         self,
         *,
+        routed_parser,
         task_id: str,
         analysis_root: Path,
         archive_name: str | None,
         archive_size_bytes: int | None,
     ):
-        xray_parser = XrayCollectorParser()
-        if xray_parser.detect(analysis_root) is not None:
-            return xray_parser.parse(
-                task_id=task_id,
-                analysis_root=analysis_root,
-                archive_name=archive_name,
-                archive_size_bytes=archive_size_bytes,
-            )
-
-        return LinuxDefaultParser().parse(
+        unified_json = routed_parser.parser.parse(
             task_id=task_id,
             analysis_root=analysis_root,
             archive_name=archive_name,
             archive_size_bytes=archive_size_bytes,
         )
+        unified_json.metadata = {
+            **unified_json.metadata,
+            "product_type": routed_parser.product_type,
+            "parser_route": routed_parser.parser_id,
+        }
+        return unified_json
 
 
 def build_analyzer_service() -> AnalyzerService:

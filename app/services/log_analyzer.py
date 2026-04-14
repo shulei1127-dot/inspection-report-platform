@@ -52,6 +52,7 @@ class LocalLogAnalyzer:
         analysis_finished_at = _utc_now_iso()
 
         return AnalyzeResponseV1(
+            product_type=_extract_product_type(unified_json.metadata.get("product_type")),
             analyzer_version=self.analyzer_version,
             analysis_started_at=analysis_started_at,
             analysis_finished_at=analysis_finished_at,
@@ -173,3 +174,11 @@ def build_log_analyzer() -> LogAnalyzer:
 
 def _utc_now_iso() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _extract_product_type(raw_value: object) -> str:
+    if isinstance(raw_value, str):
+        normalized = raw_value.strip().lower()
+        if normalized in {"xray", "unknown"}:
+            return normalized
+    return "unknown"

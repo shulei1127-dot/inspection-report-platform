@@ -4,6 +4,8 @@ from pydantic import BaseModel, Field
 
 from app.schemas.unified_json import UnifiedJsonV1
 
+ProductType = Literal["xray", "unknown"]
+
 
 class AnalyzeDirectorySource(BaseModel):
     type: str = "directory"
@@ -28,6 +30,7 @@ class AnalyzeInputSummary(BaseModel):
 class AnalyzeResponseV1(BaseModel):
     response_version: Literal["analyze-response/v1"] = "analyze-response/v1"
     schema_version: Literal["unified-json/v1"] = "unified-json/v1"
+    product_type: ProductType
     analyzer_version: str
     analysis_started_at: str
     analysis_finished_at: str

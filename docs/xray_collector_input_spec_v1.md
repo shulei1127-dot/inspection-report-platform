@@ -26,6 +26,10 @@ supported xray files into the existing canonical inputs:
 After normalization, the analyzer continues to produce the normal
 `unified-json/v1` result.
 
+Within the multi-product skeleton v1, this input family maps to:
+
+- `product_type = xray`
+
 ## Supported Root Layout
 
 v1 supports either:

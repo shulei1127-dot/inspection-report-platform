@@ -9,6 +9,9 @@ from pydantic import ValidationError
 
 from app.core.config import get_settings
 from app.schemas.report_payload import ReportPayloadV1
+from app.services.report_template_selector import (
+    resolve_report_template_path_for_unified_json_file,
+)
 
 
 class ReportRenderingError(Exception):
@@ -227,12 +230,13 @@ def build_report_renderer_adapter() -> ReportRendererAdapter:
 def render_task_report(task_id: str) -> ReportRenderResult:
     settings = get_settings()
     report_payload_path = settings.workdir_dir / task_id / "report_payload.json"
+    unified_json_path = settings.workdir_dir / task_id / "unified.json"
 
     return maybe_render_report_from_payload_file(
         task_id,
         report_payload_path,
         enabled=True,
-        template_path=settings.default_report_template_path,
+        template_path=resolve_report_template_path_for_unified_json_file(unified_json_path),
         output_path=settings.outputs_dir / task_id / "report.docx",
     )
 

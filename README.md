@@ -101,6 +101,26 @@ The analyzer side now also includes a minimal `xray-collector v1` adapter that c
 recognize one real collector layout and normalize it into the existing canonical
 inputs before producing `unified-json/v1`.
 
+The repository now also includes a minimal multi-product integration skeleton:
+
+- analyzer-side `product_type` recognition
+- analyzer-side parser routing
+- platform-side product-to-template mapping
+
+Current v1 product routing:
+
+- `xray` -> `XrayCollectorParser`
+- `unknown` -> `LinuxDefaultParser`
+
+Current v1 template mapping:
+
+- `xray` -> `templates/inspection_report.docx`
+- `unknown` -> `templates/inspection_report.docx`
+
+See:
+
+- [product_integration_skeleton_v1.md](/Users/shulei/Downloads/AI/codex/inspection-report-platform/docs/product_integration_skeleton_v1.md)
+
 ## Remote Analyzer Integration
 
 The platform can now run against the standalone analyzer service in remote mode.

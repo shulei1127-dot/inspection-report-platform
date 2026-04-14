@@ -34,6 +34,9 @@ from app.services.report_rendering_service import (
     ReportRenderResult,
     maybe_render_report_from_payload_file,
 )
+from app.services.report_template_selector import (
+    resolve_report_template_path_for_unified_json,
+)
 from app.services.task_repository import (
     TaskRecord,
     create_task_record,
@@ -174,6 +177,9 @@ def create_task_from_upload(upload: UploadFile | None, options: TaskCreateOption
         render_result = maybe_render_report_from_payload_file(
             task_id,
             report_payload_path,
+            **_build_optional_render_kwargs(
+                resolve_report_template_path_for_unified_json(unified_json)
+            ),
         )
         result_status = "completed"
         if render_result.success and render_result.output_path is not None:
@@ -532,6 +538,13 @@ def _cleanup_failed_task(archive_path: Path, task_workdir: Path) -> None:
         archive_path.unlink()
     if task_workdir.exists():
         shutil.rmtree(task_workdir)
+
+
+def _build_optional_render_kwargs(template_path: Path) -> dict[str, Path]:
+    settings = get_settings()
+    if template_path == settings.default_report_template_path:
+        return {}
+    return {"template_path": template_path}
 
 
 def _load_task_summary(unified_json_path: Path) -> TaskSummary:

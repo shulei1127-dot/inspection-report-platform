@@ -26,6 +26,7 @@ def test_local_log_analyzer_returns_versioned_contract_response(tmp_path: Path) 
 
     assert response.response_version == "analyze-response/v1"
     assert response.schema_version == "unified-json/v1"
+    assert response.product_type == "unknown"
     assert response.result.schema_version == "unified-json/v1"
     assert response.result.task_id == "tsk_local_contract_001"
     assert response.result.host_info.hostname == "host-a"
@@ -61,6 +62,7 @@ def test_remote_log_analyzer_validates_versioned_response_contract() -> None:
             json={
                 "response_version": "analyze-response/v1",
                 "schema_version": "unified-json/v1",
+                "product_type": "unknown",
                 "analyzer_version": "0.1.0",
                 "analysis_started_at": "2026-04-13T10:00:00Z",
                 "analysis_finished_at": "2026-04-13T10:00:01Z",
@@ -138,6 +140,7 @@ def test_remote_log_analyzer_validates_versioned_response_contract() -> None:
     assert '"request_version":"analyze-request/v1"' in expected_request
     assert '"type":"directory"' in expected_request
     assert response.response_version == "analyze-response/v1"
+    assert response.product_type == "unknown"
     assert response.result.task_id == "tsk_remote_contract_001"
     assert response.input_summary is not None
     assert response.input_summary.path == "/tmp/task-1"

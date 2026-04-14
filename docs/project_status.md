@@ -107,6 +107,8 @@ Log Analyzer Abstraction v1 MVP
 - revalidated the real xray sample in remote analyzer mode and increased service coverage from 1 to 2 while preserving the failed service signal
 - added minimal xray-side `service enabled` extraction from `minion-logs/minion-service-status.txt` by reading the explicit `Loaded:` enablement token and mapping it into `services[].enabled`
 - kept the `enabled` extraction low-ambiguity and limited to the current stable inventory source so downstream `report_payload.json` and DOCX rendering can show a real enabled value without changing the unified-json contract
+- added a minimal multi-product integration skeleton with analyzer-side `product_type` recognition and centralized parser routing for `xray` and `unknown`
+- added a minimal platform-side template selection convention so report rendering no longer relies purely on a hard-coded single-template assumption, even though v1 still maps both known product types to the current default DOCX asset
 
 ## Pending
 
@@ -126,6 +128,8 @@ Log Analyzer Abstraction v1 MVP
 - fuller Docker row coverage for non-standard collector-specific `docker ps -a` variants beyond the current header-based compatibility fix
 - broader service inventory coverage beyond the current narrow `minion-service-status.txt` plus `systemctl-failed.txt` merge
 - broader service attribute coverage beyond the current minimal `enabled` extraction for one stable inventory source
+- second product parser implementation beyond the current `xray` plus `unknown` skeleton
+- real multi-template asset set beyond the current shared default DOCX mapping
 
 ## Notes
 
@@ -155,3 +159,4 @@ Log Analyzer Abstraction v1 MVP
 - Real xray validation now confirms the current adapter is useful for host fields, failed service extraction, payload generation, and report rendering; the latest v2 fix also recovers standard empty-`PORTS` Docker rows and adds `last_boot_at`, while broader collector variation support remains future work.
 - The current xray service inventory is intentionally narrow: it now carries one stable running service plus failed services, which is enough to stop `services[]` from being failed-only, but not yet enough to represent the full host service landscape.
 - Xray service metadata is now slightly richer because `minion-service-status.txt` can populate `services[].enabled`, but this is still intentionally a narrow v4 increment rather than a complete service inventory model.
+- The multi-product skeleton is now in place, but it is intentionally still a thin v1 seam: `xray` and `unknown` are the only supported `product_type` values, parser routing is centralized, and template mapping is still intentionally reusing the single current DOCX asset.
