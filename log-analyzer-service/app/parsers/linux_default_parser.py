@@ -360,14 +360,14 @@ def _parse_systemctl_status(systemctl_status_path: Path | None) -> list[UnifiedJ
         unit_name = match.group(1)
         active_state = match.group(3).lower()
         sub_state = match.group(4).lower()
-        description = match.group(5) or None
+        description, enabled = _extract_service_enabled_marker(match.group(5) or None)
 
         services.append(
             UnifiedJsonService(
                 name=unit_name.removesuffix(".service"),
                 display_name=description,
                 status=_map_service_status(active_state, sub_state),
-                enabled=None,
+                enabled=enabled,
                 version=None,
                 listen_ports=[],
                 start_mode="systemd",
@@ -386,6 +386,19 @@ def _map_service_status(active_state: str, sub_state: str) -> str:
     if active_state in {"inactive", "deactivating"} or sub_state in {"dead", "exited"}:
         return "stopped"
     return "unknown"
+
+
+def _extract_service_enabled_marker(description: str | None) -> tuple[str | None, bool | None]:
+    if not description:
+        return description, None
+
+    match = re.search(r"\s*\[enabled=(true|false)\]\s*$", description, flags=re.IGNORECASE)
+    if not match:
+        return description, None
+
+    enabled = match.group(1).lower() == "true"
+    cleaned = description[: match.start()].rstrip() or None
+    return cleaned, enabled
 
 
 def _parse_docker_ps(docker_ps_path: Path | None) -> list[UnifiedJsonContainer]:

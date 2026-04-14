@@ -105,6 +105,8 @@ Log Analyzer Abstraction v1 MVP
 - revalidated the real xray sample in remote analyzer mode and increased container coverage from 12 to 20 while removing the previous `host-last-boot-missing` issue
 - added a minimal xray service inventory source from `minion-logs/minion-service-status.txt` and merged it with `systemctl-failed.txt` so `services[]` is no longer failed-only
 - revalidated the real xray sample in remote analyzer mode and increased service coverage from 1 to 2 while preserving the failed service signal
+- added minimal xray-side `service enabled` extraction from `minion-logs/minion-service-status.txt` by reading the explicit `Loaded:` enablement token and mapping it into `services[].enabled`
+- kept the `enabled` extraction low-ambiguity and limited to the current stable inventory source so downstream `report_payload.json` and DOCX rendering can show a real enabled value without changing the unified-json contract
 
 ## Pending
 
@@ -123,6 +125,7 @@ Log Analyzer Abstraction v1 MVP
 - richer xray-collector coverage beyond the current minimal v1 file set
 - fuller Docker row coverage for non-standard collector-specific `docker ps -a` variants beyond the current header-based compatibility fix
 - broader service inventory coverage beyond the current narrow `minion-service-status.txt` plus `systemctl-failed.txt` merge
+- broader service attribute coverage beyond the current minimal `enabled` extraction for one stable inventory source
 
 ## Notes
 
@@ -151,3 +154,4 @@ Log Analyzer Abstraction v1 MVP
 - The first `xray-collector` support is intentionally adapter-based rather than a generic multi-collector framework so the analyzer can absorb one real business input without broad parser refactoring.
 - Real xray validation now confirms the current adapter is useful for host fields, failed service extraction, payload generation, and report rendering; the latest v2 fix also recovers standard empty-`PORTS` Docker rows and adds `last_boot_at`, while broader collector variation support remains future work.
 - The current xray service inventory is intentionally narrow: it now carries one stable running service plus failed services, which is enough to stop `services[]` from being failed-only, but not yet enough to represent the full host service landscape.
+- Xray service metadata is now slightly richer because `minion-service-status.txt` can populate `services[].enabled`, but this is still intentionally a narrow v4 increment rather than a complete service inventory model.

@@ -87,6 +87,8 @@ Current v3 behavior:
 - normalize one inventory service from `minion-service-status.txt`
 - merge it with failed rows from `systemctl-failed.txt`
 - failed rows win on duplicate service names
+- extract a minimal `enabled` value from the `Loaded:` line in `minion-service-status.txt`
+  when the token is clearly `enabled` or `disabled`
 
 This is still intentionally not a full `systemctl list-units --type=service --all`
 inventory.
@@ -136,6 +138,15 @@ The adapter now builds `system/systemctl_status` from two narrow sources:
 
 This keeps `services[]` from being failed-only while staying within a low-ambiguity
 input boundary.
+
+For the current v4 scope, the adapter may embed a minimal internal marker into the
+canonical row so the existing Linux parser can recover:
+
+- `enabled=true`
+- `enabled=false`
+
+The marker is stripped before it reaches `services[].display_name`, so downstream
+report rendering still sees a clean service name/description.
 
 ### `containers/docker_ps`
 
@@ -196,6 +207,8 @@ The validation confirmed:
 - `hostnamectl.txt`, `timedatectl.txt`, `uname.txt`, `uptime.txt` were normalized successfully
 - `list-boot.txt` now provides a low-ambiguity `last_boot_at` when the current boot line is parseable
 - `minion-service-status.txt` now provides a minimal running-service inventory row
+- `minion-service-status.txt` now also provides a minimal `enabled` value when the
+  `Loaded:` line is explicit enough
 - `systemctl-failed.txt` produced failed-service output and service issues
 - `docker-ps-a.txt` produced usable container rows for the current parser and remained
   compatible with downstream `report_payload.json` and DOCX rendering

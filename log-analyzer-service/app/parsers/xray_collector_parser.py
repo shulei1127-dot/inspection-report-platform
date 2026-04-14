@@ -327,13 +327,18 @@ class XrayCollectorParser:
         if not unit_match or not loaded_match or not active_match:
             return None
 
+        description = unit_match.group(2)
+        enabled = _extract_enabled_value(loaded_line)
+        if enabled is not None:
+            description = f"{description} [enabled={'true' if enabled else 'false'}]"
+
         return " ".join(
             [
                 unit_match.group(1),
                 loaded_match.group(1),
                 active_match.group(1),
                 active_match.group(2),
-                unit_match.group(2),
+                description,
             ]
         ).strip()
 
@@ -464,3 +469,10 @@ def _extract_last_boot_at(content: str) -> str | None:
         return f"{date_part}T{time_part}Z"
 
     return None
+
+
+def _extract_enabled_value(loaded_line: str) -> bool | None:
+    match = re.search(r";\s*(enabled|disabled)\s*;", loaded_line)
+    if not match:
+        return None
+    return match.group(1) == "enabled"

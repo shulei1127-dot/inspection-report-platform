@@ -58,6 +58,57 @@ def test_post_analyze_happy_path_returns_versioned_response(tmp_path: Path) -> N
     assert validated.input_summary.directory_count == 2
 
 
+def test_post_analyze_parses_service_enabled_marker_from_canonical_status(tmp_path: Path) -> None:
+    system_dir = tmp_path / "system"
+    container_dir = tmp_path / "containers"
+    system_dir.mkdir(parents=True)
+    container_dir.mkdir(parents=True)
+
+    (system_dir / "system_info").write_text(
+        "\n".join(
+            [
+                "hostname=host-service-enabled",
+                "kernel=5.15.0-test",
+                "timezone=UTC",
+                "uptime_seconds=1200",
+                "last_boot_at=2026-04-13T08:00:00Z",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (system_dir / "systemctl_status").write_text(
+        "\n".join(
+            [
+                "UNIT LOAD ACTIVE SUB DESCRIPTION",
+                "minion.service loaded active running minion service [enabled=true]",
+                "fwupd-refresh.service loaded failed failed fwupd-refresh.service",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    response = client.post(
+        "/analyze",
+        json={
+            "request_version": "analyze-request/v1",
+            "task_id": "tsk_analyzer_service_enabled",
+            "source": {
+                "type": "directory",
+                "path": tmp_path.as_posix(),
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    validated = AnalyzeResponseV1.model_validate(response.json())
+    minion = next(service for service in validated.result.services if service.name == "minion")
+    fwupd = next(service for service in validated.result.services if service.name == "fwupd-refresh")
+
+    assert minion.enabled is True
+    assert minion.display_name == "minion service"
+    assert fwupd.enabled is None
+
+
 def test_post_analyze_parses_docker_rows_when_ports_column_is_empty(tmp_path: Path) -> None:
     system_dir = tmp_path / "system"
     container_dir = tmp_path / "containers"
@@ -150,6 +201,7 @@ def test_post_analyze_recognizes_xray_collector_input(tmp_path: Path) -> None:
         "minion",
     ]
     assert any(service.name == "minion" and service.status == "running" for service in validated.result.services)
+    assert any(service.name == "minion" and service.enabled is True for service in validated.result.services)
     assert any(service.name == "fwupd-refresh" and service.status == "failed" for service in validated.result.services)
     assert validated.result.containers[0].name == "xray-nginx"
     assert any(container.name == "xray-upgrader" for container in validated.result.containers)
