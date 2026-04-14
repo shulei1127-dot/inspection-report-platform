@@ -142,10 +142,15 @@ def test_post_analyze_recognizes_xray_collector_input(tmp_path: Path) -> None:
     assert validated.result.host_info.timezone == "Etc/UTC"
     assert validated.result.host_info.last_boot_at == "2026-03-22T05:08:48Z"
     assert validated.result.summary.overall_status == "warning"
-    assert validated.result.summary.service_count == 1
+    assert validated.result.summary.service_count == 2
     assert validated.result.summary.container_count == 3
     assert validated.result.summary.issue_count == 2
-    assert validated.result.services[0].name == "fwupd-refresh"
+    assert [service.name for service in validated.result.services] == [
+        "fwupd-refresh",
+        "minion",
+    ]
+    assert any(service.name == "minion" and service.status == "running" for service in validated.result.services)
+    assert any(service.name == "fwupd-refresh" and service.status == "failed" for service in validated.result.services)
     assert validated.result.containers[0].name == "xray-nginx"
     assert any(container.name == "xray-upgrader" for container in validated.result.containers)
     assert any(container.name == "xray-gunkit-base" for container in validated.result.containers)

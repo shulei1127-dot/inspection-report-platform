@@ -103,6 +103,8 @@ Log Analyzer Abstraction v1 MVP
 - improved Docker table parsing so `docker ps -a` rows with empty `PORTS` columns are preserved more reliably instead of being dropped by unstable whitespace splitting
 - added minimal `last_boot_at` extraction for xray inputs from `system-logs/list-boot.txt` when the current boot start time is clearly parseable
 - revalidated the real xray sample in remote analyzer mode and increased container coverage from 12 to 20 while removing the previous `host-last-boot-missing` issue
+- added a minimal xray service inventory source from `minion-logs/minion-service-status.txt` and merged it with `systemctl-failed.txt` so `services[]` is no longer failed-only
+- revalidated the real xray sample in remote analyzer mode and increased service coverage from 1 to 2 while preserving the failed service signal
 
 ## Pending
 
@@ -120,6 +122,7 @@ Log Analyzer Abstraction v1 MVP
 - archive-upload mode for analyzer service
 - richer xray-collector coverage beyond the current minimal v1 file set
 - fuller Docker row coverage for non-standard collector-specific `docker ps -a` variants beyond the current header-based compatibility fix
+- broader service inventory coverage beyond the current narrow `minion-service-status.txt` plus `systemctl-failed.txt` merge
 
 ## Notes
 
@@ -147,3 +150,4 @@ Log Analyzer Abstraction v1 MVP
 - Remote analyzer failure regression is now scriptable without mutating the real analyzer service because the smoke script uses a temporary mock analyzer process.
 - The first `xray-collector` support is intentionally adapter-based rather than a generic multi-collector framework so the analyzer can absorb one real business input without broad parser refactoring.
 - Real xray validation now confirms the current adapter is useful for host fields, failed service extraction, payload generation, and report rendering; the latest v2 fix also recovers standard empty-`PORTS` Docker rows and adds `last_boot_at`, while broader collector variation support remains future work.
+- The current xray service inventory is intentionally narrow: it now carries one stable running service plus failed services, which is enough to stop `services[]` from being failed-only, but not yet enough to represent the full host service landscape.

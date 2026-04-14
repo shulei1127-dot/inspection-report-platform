@@ -20,6 +20,7 @@ class XrayCollectorInput:
     uname_path: Path | None
     uptime_path: Path | None
     list_boot_path: Path | None
+    minion_service_status_path: Path | None
     systemctl_failed_path: Path | None
     docker_ps_path: Path | None
     ip_addr_path: Path | None
@@ -79,6 +80,7 @@ class XrayCollectorParser:
             "collector_type": "xray-collector/v1",
             "xray_root_path": detected.root.as_posix(),
             "xray_adapted_system_info": self._has_host_data(detected),
+            "xray_adapted_service_inventory": detected.minion_service_status_path is not None,
             "xray_adapted_systemctl_failed": detected.systemctl_failed_path is not None,
             "xray_adapted_docker_ps": detected.docker_ps_path is not None,
         }
@@ -113,6 +115,9 @@ class XrayCollectorParser:
             list_boot_path=_first_existing(
                 system_logs_dir / "list-boot.txt",
             ),
+            minion_service_status_path=_first_existing(
+                candidate / "minion-logs" / "minion-service-status.txt",
+            ),
             systemctl_failed_path=_first_existing(
                 system_logs_dir / "systemctl-failed.txt",
             ),
@@ -129,6 +134,7 @@ class XrayCollectorParser:
         if not any(
             [
                 self._has_host_data(detected),
+                detected.minion_service_status_path is not None,
                 detected.systemctl_failed_path is not None,
                 detected.docker_ps_path is not None,
             ]
@@ -246,28 +252,28 @@ class XrayCollectorParser:
         self,
         detected: XrayCollectorInput,
     ) -> list[str]:
-        if detected.systemctl_failed_path is None:
-            return []
+        service_rows: dict[str, str] = {}
 
-        lines = [
-            "UNIT LOAD ACTIVE SUB DESCRIPTION",
-        ]
-        for raw_line in detected.systemctl_failed_path.read_text(
-            encoding="utf-8",
-            errors="ignore",
-        ).splitlines():
-            line = raw_line.strip().lstrip("●").strip()
-            if not line or line.startswith("#"):
-                continue
-            match = re.match(
-                r"^([A-Za-z0-9_.:@-]+\.service)\s+(\S+)\s+(\S+)\s+(\S+)(?:\s+(.*\S))?$",
-                line,
-            )
-            if not match:
-                continue
-            description = match.group(5) or ""
-            lines.append(
-                " ".join(
+        inventory_row = self._build_minion_inventory_row(detected)
+        if inventory_row is not None:
+            service_rows[inventory_row.split()[0]] = inventory_row
+
+        if detected.systemctl_failed_path is not None:
+            for raw_line in detected.systemctl_failed_path.read_text(
+                encoding="utf-8",
+                errors="ignore",
+            ).splitlines():
+                line = raw_line.strip().lstrip("●").strip()
+                if not line or line.startswith("#"):
+                    continue
+                match = re.match(
+                    r"^([A-Za-z0-9_.:@-]+\.service)\s+(\S+)\s+(\S+)\s+(\S+)(?:\s+(.*\S))?$",
+                    line,
+                )
+                if not match:
+                    continue
+                description = match.group(5) or ""
+                service_rows[match.group(1)] = " ".join(
                     [
                         match.group(1),
                         match.group(2),
@@ -276,9 +282,60 @@ class XrayCollectorParser:
                         description,
                     ]
                 ).strip()
-            )
 
-        return lines if len(lines) > 1 else []
+        if not service_rows:
+            return []
+
+        lines = ["UNIT LOAD ACTIVE SUB DESCRIPTION"]
+        lines.extend(service_rows[unit_name] for unit_name in sorted(service_rows))
+        return lines
+
+    def _build_minion_inventory_row(
+        self,
+        detected: XrayCollectorInput,
+    ) -> str | None:
+        if detected.minion_service_status_path is None:
+            return None
+
+        unit_line = None
+        loaded_line = None
+        active_line = None
+
+        for raw_line in detected.minion_service_status_path.read_text(
+            encoding="utf-8",
+            errors="ignore",
+        ).splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if unit_line is None and ".service -" in line:
+                unit_line = line.lstrip("●").strip()
+                continue
+            if loaded_line is None and line.startswith("Loaded:"):
+                loaded_line = line
+                continue
+            if active_line is None and line.startswith("Active:"):
+                active_line = line
+                continue
+
+        if unit_line is None or loaded_line is None or active_line is None:
+            return None
+
+        unit_match = re.match(r"^([A-Za-z0-9_.:@-]+\.service)\s+-\s+(.+)$", unit_line)
+        loaded_match = re.match(r"^Loaded:\s+(\S+)\s+.*$", loaded_line)
+        active_match = re.match(r"^Active:\s+(\S+)\s+\(([^)]+)\).*$", active_line)
+        if not unit_match or not loaded_match or not active_match:
+            return None
+
+        return " ".join(
+            [
+                unit_match.group(1),
+                loaded_match.group(1),
+                active_match.group(1),
+                active_match.group(2),
+                unit_match.group(2),
+            ]
+        ).strip()
 
     def _build_docker_ps_content(self, detected: XrayCollectorInput) -> str | None:
         if detected.docker_ps_path is None:

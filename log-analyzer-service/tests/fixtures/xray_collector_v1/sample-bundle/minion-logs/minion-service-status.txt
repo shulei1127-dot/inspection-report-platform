@@ -1,0 +1,11 @@
+# time: 2026-04-13 12:32:04 +0000
+# cmd: systemctl status minion --no-pager
+
+● minion.service - minion service
+     Loaded: loaded (/etc/systemd/system/minion.service; enabled; vendor preset: enabled)
+     Active: active (running) since Mon 2025-12-22 13:04:05 UTC; 3 months 20 days ago
+   Main PID: 1009559 (minion)
+      Tasks: 16 (limit: 19083)
+     Memory: 37.0M
+     CGroup: /system.slice/minion.service
+             └─1009559 /data/x-ray/minion daemon

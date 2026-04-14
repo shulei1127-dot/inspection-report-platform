@@ -74,12 +74,22 @@ Optional IP files:
 
 ### Service Inputs
 
+Minimal inventory source:
+
+- `minion-logs/minion-service-status.txt`
+
 Supported file:
 
 - `system-logs/systemctl-failed.txt`
 
-v1 only extracts failed services from this file. It does not reconstruct a full
-`systemctl list-units --type=service --all` inventory.
+Current v3 behavior:
+
+- normalize one inventory service from `minion-service-status.txt`
+- merge it with failed rows from `systemctl-failed.txt`
+- failed rows win on duplicate service names
+
+This is still intentionally not a full `systemctl list-units --type=service --all`
+inventory.
 
 ### Container Inputs
 
@@ -119,8 +129,13 @@ Current v1 field mapping:
 
 ### `system/systemctl_status`
 
-The adapter converts `systemctl-failed.txt` into a minimal canonical status table
-containing only failed rows. This is enough for the current issue-generation rules.
+The adapter now builds `system/systemctl_status` from two narrow sources:
+
+- one running inventory row from `minion-service-status.txt`
+- failed rows from `systemctl-failed.txt`
+
+This keeps `services[]` from being failed-only while staying within a low-ambiguity
+input boundary.
 
 ### `containers/docker_ps`
 
@@ -180,6 +195,7 @@ The validation confirmed:
 
 - `hostnamectl.txt`, `timedatectl.txt`, `uname.txt`, `uptime.txt` were normalized successfully
 - `list-boot.txt` now provides a low-ambiguity `last_boot_at` when the current boot line is parseable
+- `minion-service-status.txt` now provides a minimal running-service inventory row
 - `systemctl-failed.txt` produced failed-service output and service issues
 - `docker-ps-a.txt` produced usable container rows for the current parser and remained
   compatible with downstream `report_payload.json` and DOCX rendering
