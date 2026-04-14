@@ -396,8 +396,9 @@ def _parse_docker_ps(docker_ps_path: Path | None) -> list[UnifiedJsonContainer]:
     if not lines:
         return []
 
-    splitter = _pick_table_splitter(lines[0])
-    header = splitter(lines[0])
+    header_line = lines[0]
+    splitter = _pick_table_splitter(header_line)
+    header = splitter(header_line)
     if not header:
         return []
 
@@ -406,6 +407,7 @@ def _parse_docker_ps(docker_ps_path: Path | None) -> list[UnifiedJsonContainer]:
     if not required.issubset(header_map):
         return []
 
+    positioned_parser = _build_docker_position_parser(header_line)
     ports_index = header_map.get("PORTS")
     containers: list[UnifiedJsonContainer] = []
 
@@ -414,15 +416,26 @@ def _parse_docker_ps(docker_ps_path: Path | None) -> list[UnifiedJsonContainer]:
         if not line:
             continue
 
-        columns = splitter(raw_line.rstrip())
-        required_width = max(header_map[name] for name in required) + 1
-        if len(columns) < required_width:
-            continue
+        parsed_row = positioned_parser(raw_line.rstrip()) if positioned_parser is not None else None
+        if parsed_row is not None:
+            name = parsed_row["name"].strip()
+            image = parsed_row["image"].strip()
+            status_text = parsed_row["status"].strip()
+            ports_text = parsed_row["ports"].strip()
+        else:
+            columns = splitter(raw_line.rstrip())
+            required_width = max(header_map[name] for name in required) + 1
+            if len(columns) < required_width:
+                continue
 
-        name = columns[header_map["NAMES"]].strip()
-        image = columns[header_map["IMAGE"]].strip()
-        status_text = columns[header_map["STATUS"]].strip()
-        ports_text = columns[ports_index].strip() if ports_index is not None and len(columns) > ports_index else ""
+            name = columns[header_map["NAMES"]].strip()
+            image = columns[header_map["IMAGE"]].strip()
+            status_text = columns[header_map["STATUS"]].strip()
+            ports_text = (
+                columns[ports_index].strip()
+                if ports_index is not None and len(columns) > ports_index
+                else ""
+            )
 
         if not name:
             continue
@@ -446,6 +459,44 @@ def _pick_table_splitter(header_line: str):
     if "\t" in header_line:
         return lambda line: [part.strip() for part in line.split("\t")]
     return lambda line: [part.strip() for part in re.split(r"\s{2,}", line.strip())]
+
+
+def _build_docker_position_parser(header_line: str):
+    if "\t" in header_line:
+        return None
+
+    image_start = header_line.find("IMAGE")
+    command_start = header_line.find("COMMAND")
+    status_start = header_line.find("STATUS")
+    ports_start = header_line.find("PORTS")
+    names_start = header_line.find("NAMES")
+
+    required_positions = [image_start, command_start, status_start, names_start]
+    if any(position < 0 for position in required_positions):
+        return None
+
+    ports_slice_start = ports_start if ports_start >= 0 else names_start
+
+    def parse_row(line: str) -> dict[str, str] | None:
+        if len(line) < names_start:
+            return None
+
+        image = line[image_start:command_start].strip()
+        status = line[status_start:ports_slice_start].strip()
+        ports = line[ports_slice_start:names_start].strip() if ports_start >= 0 else ""
+        name = line[names_start:].strip()
+
+        if not image or not status or not name:
+            return None
+
+        return {
+            "image": image,
+            "status": status,
+            "ports": ports,
+            "name": name,
+        }
+
+    return parse_row
 
 
 def _map_container_status(status_text: str) -> str:

@@ -63,6 +63,10 @@ Preferred files:
 - `system-logs/uname.txt`
 - `system-logs/uptime.txt`
 
+Optional low-ambiguity boot-time file:
+
+- `system-logs/list-boot.txt`
+
 Optional IP files:
 
 - `network/ip-addr.txt`
@@ -107,12 +111,11 @@ Current v1 field mapping:
   - from `timedatectl.txt`
 - `uptime_seconds`:
   - converted from shell-style `uptime` output
+- `last_boot_at`:
+  - extracted from `journalctl --list-boot` output in `list-boot.txt`
+  - only when boot index `0` has a clearly parseable UTC start time
 - `ip`:
   - first non-loopback IPv4 address found in `ip-addr.txt` / `ip.addr.txt`
-
-Not covered in v1:
-
-- `last_boot_at`
 
 ### `system/systemctl_status`
 
@@ -176,13 +179,13 @@ This v1 shape has been validated against one real local sample:
 The validation confirmed:
 
 - `hostnamectl.txt`, `timedatectl.txt`, `uname.txt`, `uptime.txt` were normalized successfully
+- `list-boot.txt` now provides a low-ambiguity `last_boot_at` when the current boot line is parseable
 - `systemctl-failed.txt` produced failed-service output and service issues
 - `docker-ps-a.txt` produced usable container rows for the current parser and remained
   compatible with downstream `report_payload.json` and DOCX rendering
 
-Known limitation observed during real validation:
+Follow-up limitation still observed after v2 improvements:
 
-- the current reused Docker table parser only captures a subset of `docker ps -a`
-  rows when some rows omit `PORTS` and the whitespace table becomes ambiguous
-- in practice, this means xray container coverage is currently partial and should be
-  expanded in v2 without changing the `unified-json/v1` contract
+- standard Docker rows with empty `PORTS` are now handled more reliably, but the
+  parser still targets standard table output and does not yet cover every possible
+  collector-specific variation

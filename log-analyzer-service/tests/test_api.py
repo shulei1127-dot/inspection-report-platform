@@ -58,6 +58,60 @@ def test_post_analyze_happy_path_returns_versioned_response(tmp_path: Path) -> N
     assert validated.input_summary.directory_count == 2
 
 
+def test_post_analyze_parses_docker_rows_when_ports_column_is_empty(tmp_path: Path) -> None:
+    system_dir = tmp_path / "system"
+    container_dir = tmp_path / "containers"
+    system_dir.mkdir(parents=True)
+    container_dir.mkdir(parents=True)
+
+    (system_dir / "system_info").write_text(
+        "\n".join(
+            [
+                "hostname=host-b",
+                "kernel=5.15.0-test",
+                "timezone=UTC",
+                "uptime_seconds=1200",
+                "last_boot_at=2026-04-13T08:00:00Z",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (container_dir / "docker_ps").write_text(
+        "\n".join(
+            [
+                "CONTAINER ID   IMAGE          COMMAND             CREATED        STATUS                  PORTS                 NAMES",
+                'abc123         nginx:1.27     "/docker-entry"     3 months ago   Up 3 months (healthy)   0.0.0.0:443->443/tcp  xray-nginx',
+                'def456         app:latest     "bash deploy.sh"    3 months ago   Up 3 months (healthy)                         xray-deploy',
+                'ghi789         app:latest     "bash run.sh"       3 months ago   Exited (1) 2 hours ago                         xray-web',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    response = client.post(
+        "/analyze",
+        json={
+            "request_version": "analyze-request/v1",
+            "task_id": "tsk_analyzer_docker_empty_ports",
+            "source": {
+                "type": "directory",
+                "path": tmp_path.as_posix(),
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    validated = AnalyzeResponseV1.model_validate(response.json())
+
+    assert validated.result.summary.container_count == 3
+    assert [container.name for container in validated.result.containers] == [
+        "xray-nginx",
+        "xray-deploy",
+        "xray-web",
+    ]
+    assert any(issue.related_object_name == "xray-web" for issue in validated.result.issues)
+
+
 def test_post_analyze_recognizes_xray_collector_input(tmp_path: Path) -> None:
     xray_root = tmp_path / "xray-collector.20260413123039"
     shutil.copytree(XRAY_FIXTURE_DIR, xray_root)
@@ -86,13 +140,15 @@ def test_post_analyze_recognizes_xray_collector_input(tmp_path: Path) -> None:
     assert validated.result.host_info.hostname == "24waf"
     assert validated.result.host_info.ip == "10.10.20.30"
     assert validated.result.host_info.timezone == "Etc/UTC"
+    assert validated.result.host_info.last_boot_at == "2026-03-22T05:08:48Z"
     assert validated.result.summary.overall_status == "warning"
     assert validated.result.summary.service_count == 1
-    assert validated.result.summary.container_count == 2
-    assert validated.result.summary.issue_count == 3
+    assert validated.result.summary.container_count == 3
+    assert validated.result.summary.issue_count == 2
     assert validated.result.services[0].name == "fwupd-refresh"
     assert validated.result.containers[0].name == "xray-nginx"
     assert any(container.name == "xray-upgrader" for container in validated.result.containers)
+    assert any(container.name == "xray-gunkit-base" for container in validated.result.containers)
     assert validated.result.metadata["collector_type"] == "xray-collector/v1"
     assert any("xray-collector v1 input detected" in warning for warning in validated.warnings)
 

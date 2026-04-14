@@ -100,6 +100,9 @@ Log Analyzer Abstraction v1 MVP
 - reused the existing Linux parser after normalization so `host_info`, `services`, `containers`, `issues`, and `summary` continue to flow through the existing `unified-json/v1` path
 - added a fixed `xray-collector` fixture and analyzer tests validating recognition, canonical normalization, and valid `unified-json/v1` output
 - validated the `xray-collector v1` adapter against one real local sample in remote analyzer mode, confirming end-to-end generation of `unified.json`, `report_payload.json`, and a compatible rendered DOCX report
+- improved Docker table parsing so `docker ps -a` rows with empty `PORTS` columns are preserved more reliably instead of being dropped by unstable whitespace splitting
+- added minimal `last_boot_at` extraction for xray inputs from `system-logs/list-boot.txt` when the current boot start time is clearly parseable
+- revalidated the real xray sample in remote analyzer mode and increased container coverage from 12 to 20 while removing the previous `host-last-boot-missing` issue
 
 ## Pending
 
@@ -116,7 +119,7 @@ Log Analyzer Abstraction v1 MVP
 - richer analyzer coverage beyond the current migrated parser set
 - archive-upload mode for analyzer service
 - richer xray-collector coverage beyond the current minimal v1 file set
-- fuller Docker row coverage for xray collector samples where `docker ps -a` rows omit `PORTS` and the current whitespace-table parser drops some containers
+- fuller Docker row coverage for non-standard collector-specific `docker ps -a` variants beyond the current header-based compatibility fix
 
 ## Notes
 
@@ -143,4 +146,4 @@ Log Analyzer Abstraction v1 MVP
 - Platform task records now retain analyzer error details as JSON text for better failure diagnosis, but this is still a minimal persistence shape rather than a richer structured error model.
 - Remote analyzer failure regression is now scriptable without mutating the real analyzer service because the smoke script uses a temporary mock analyzer process.
 - The first `xray-collector` support is intentionally adapter-based rather than a generic multi-collector framework so the analyzer can absorb one real business input without broad parser refactoring.
-- Real xray validation now confirms the current adapter is useful for host fields, failed service extraction, payload generation, and report rendering, while also showing that container extraction is still partial for some `docker ps -a` layouts and should be improved in v2.
+- Real xray validation now confirms the current adapter is useful for host fields, failed service extraction, payload generation, and report rendering; the latest v2 fix also recovers standard empty-`PORTS` Docker rows and adds `last_boot_at`, while broader collector variation support remains future work.

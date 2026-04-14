@@ -19,6 +19,7 @@ class XrayCollectorInput:
     timedatectl_path: Path | None
     uname_path: Path | None
     uptime_path: Path | None
+    list_boot_path: Path | None
     systemctl_failed_path: Path | None
     docker_ps_path: Path | None
     ip_addr_path: Path | None
@@ -108,6 +109,9 @@ class XrayCollectorParser:
             ),
             uptime_path=_first_existing(
                 system_logs_dir / "uptime.txt",
+            ),
+            list_boot_path=_first_existing(
+                system_logs_dir / "list-boot.txt",
             ),
             systemctl_failed_path=_first_existing(
                 system_logs_dir / "systemctl-failed.txt",
@@ -212,6 +216,15 @@ class XrayCollectorParser:
             if uptime_seconds is not None:
                 values["uptime_seconds"] = str(uptime_seconds)
 
+        if detected.list_boot_path is not None:
+            list_boot_text = detected.list_boot_path.read_text(
+                encoding="utf-8",
+                errors="ignore",
+            )
+            last_boot_at = _extract_last_boot_at(list_boot_text)
+            if last_boot_at:
+                values["last_boot_at"] = last_boot_at
+
         if detected.ip_addr_path is not None:
             ip_text = detected.ip_addr_path.read_text(encoding="utf-8", errors="ignore")
             ip_value = _extract_first_ipv4(ip_text)
@@ -225,6 +238,7 @@ class XrayCollectorParser:
             "kernel",
             "timezone",
             "uptime_seconds",
+            "last_boot_at",
         ]
         return [f"{key}={values[key]}" for key in ordered_keys if key in values]
 
@@ -368,4 +382,28 @@ def _extract_first_ipv4(content: str) -> str | None:
         ip_value = match.group(1)
         if not ip_value.startswith("127."):
             return ip_value
+    return None
+
+
+def _extract_last_boot_at(content: str) -> str | None:
+    for raw_line in content.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+
+        match = re.match(
+            r"^0\s+\S+\s+\w{3}\s+(\d{4}-\d{2}-\d{2})\s+"
+            r"(\d{2}:\d{2}:\d{2})\s+(UTC)(?:—|--|-).*$",
+            line,
+        )
+        if not match:
+            continue
+
+        date_part = match.group(1)
+        time_part = match.group(2)
+        timezone = match.group(3)
+        if timezone != "UTC":
+            return None
+        return f"{date_part}T{time_part}Z"
+
     return None
