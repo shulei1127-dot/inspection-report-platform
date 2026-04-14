@@ -166,3 +166,23 @@ canonical input bundle directly:
 
 This xray adapter exists so the analyzer can consume one real collector shape now,
 without waiting for all collectors to be rewritten.
+
+## Real Validation Notes
+
+This v1 shape has been validated against one real local sample:
+
+- `xray-collector.20260413123039`
+
+The validation confirmed:
+
+- `hostnamectl.txt`, `timedatectl.txt`, `uname.txt`, `uptime.txt` were normalized successfully
+- `systemctl-failed.txt` produced failed-service output and service issues
+- `docker-ps-a.txt` produced usable container rows for the current parser and remained
+  compatible with downstream `report_payload.json` and DOCX rendering
+
+Known limitation observed during real validation:
+
+- the current reused Docker table parser only captures a subset of `docker ps -a`
+  rows when some rows omit `PORTS` and the whitespace table becomes ambiguous
+- in practice, this means xray container coverage is currently partial and should be
+  expanded in v2 without changing the `unified-json/v1` contract

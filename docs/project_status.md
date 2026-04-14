@@ -99,6 +99,7 @@ Log Analyzer Abstraction v1 MVP
 - added a minimal analyzer-side `xray-collector v1` adapter that recognizes one real collector layout and normalizes it into canonical `system_info`, `systemctl_status`, and `docker_ps` inputs
 - reused the existing Linux parser after normalization so `host_info`, `services`, `containers`, `issues`, and `summary` continue to flow through the existing `unified-json/v1` path
 - added a fixed `xray-collector` fixture and analyzer tests validating recognition, canonical normalization, and valid `unified-json/v1` output
+- validated the `xray-collector v1` adapter against one real local sample in remote analyzer mode, confirming end-to-end generation of `unified.json`, `report_payload.json`, and a compatible rendered DOCX report
 
 ## Pending
 
@@ -115,6 +116,7 @@ Log Analyzer Abstraction v1 MVP
 - richer analyzer coverage beyond the current migrated parser set
 - archive-upload mode for analyzer service
 - richer xray-collector coverage beyond the current minimal v1 file set
+- fuller Docker row coverage for xray collector samples where `docker ps -a` rows omit `PORTS` and the current whitespace-table parser drops some containers
 
 ## Notes
 
@@ -141,3 +143,4 @@ Log Analyzer Abstraction v1 MVP
 - Platform task records now retain analyzer error details as JSON text for better failure diagnosis, but this is still a minimal persistence shape rather than a richer structured error model.
 - Remote analyzer failure regression is now scriptable without mutating the real analyzer service because the smoke script uses a temporary mock analyzer process.
 - The first `xray-collector` support is intentionally adapter-based rather than a generic multi-collector framework so the analyzer can absorb one real business input without broad parser refactoring.
+- Real xray validation now confirms the current adapter is useful for host fields, failed service extraction, payload generation, and report rendering, while also showing that container extraction is still partial for some `docker ps -a` layouts and should be improved in v2.
